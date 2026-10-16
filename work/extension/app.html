@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iPhoneduo助手aigoodbro · 1016v6</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">AIGOODBRO</p>
+      <h1>iPhoneduo助手aigoodbro</h1>
+      <p class="subtitle">选择门店与型号，有货时及时提醒</p>
+    </div>
+    <div class="version">1016v6 · Chrome + Java</div>
+  </header>
+
+  <main>
+    <section class="card config-card">
+      <div class="section-heading">
+        <div><p class="step">01</p><h2>选择商品</h2></div>
+        <span class="live-dot">本机 Java 后台</span>
+      </div>
+      <div class="field-grid">
+        <label><span>地区</span><select id="area"></select></label>
+        <label><span>省份 / 州</span><select id="province"></select></label>
+        <label class="wide"><span>门店</span><select id="store"></select></label>
+        <label><span>型号</span><select id="model"></select></label>
+        <label><span>容量 / 尺寸</span><select id="capacity"></select></label>
+        <label class="wide"><span>颜色 / 款式</span><select id="color"></select></label>
+
+      </div>
+      <button id="add" class="primary full">添加到监控列表</button>
+      <p id="form-message" class="form-message" aria-live="polite"></p>
+    </section>
+
+    <section class="card monitor-card">
+      <div class="section-heading">
+        <div><p class="step">02</p><h2>监控任务</h2></div>
+        <span id="monitor-badge" class="status-badge idle">正在连接后台</span>
+      </div>
+      <div class="settings-actions"><span id="backend-message" role="status">正在读取后台状态…</span><button id="reconnect" class="ghost" type="button">重新连接</button></div>
+      <div id="empty-tasks" class="empty-state">
+        <div class="empty-icon">⌁</div>
+        <p>还没有监控任务</p>
+        <span>从左侧选择门店和商品后添加</span>
+      </div>
+      <div id="tasks" class="task-list"></div>
+      <div class="controls">
+        <button id="start" class="primary">开始监控</button>
+        <button id="check" class="secondary">立即检查</button>
+        <button id="stop" class="ghost">暂停</button>
+      </div>
+      <div class="session-note">
+        <strong>关闭 Chrome 后，Java 后台继续监控。</strong>
+        电脑睡眠或断网时无法实时查询。这里只监控门店自提库存。中国大陆任务也可在打开官网商品页、完成必要验证后，点“官网页查库存”查询一次；该结果单独显示，不触发下单。购买与付款仍在官网完成。
+      </div>
+    </section>
+
+    <section class="card notification-card">
+      <div class="section-heading compact">
+        <div><p class="step">03</p><h2>提醒与频率</h2></div>
+        <span class="version">提醒由 Java 后台发送</span>
+      </div>
+      <div class="field-grid">
+        <label><span>检查间隔</span><select id="interval"><option value="30">30 秒</option><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="300">5 分钟</option></select></label>
+        <label><span>Bark 推送地址（可选）</span><input id="bark" type="password" autocomplete="off" placeholder="https://api.day.app/…"></label>
+        <label><span>飞书 / Lark 机器人 Webhook（可选）</span><input id="feishu-webhook" type="password" autocomplete="off" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></label>
+        <label><span>机器人签名密钥（可选）</span><input id="feishu-secret" type="password" autocomplete="off" placeholder="仅开启签名校验时填写"></label>
+      </div>
+      <div class="settings-actions"><button id="save-settings" class="secondary">保存设置</button><span id="settings-message" role="status"></span></div>
+      <p class="settings-note">设置保存在本机 Java 后台和扩展缓存。关闭 Chrome 后需要配置 Bark 或飞书 / Lark 才能收到提醒；未配置时仅记录库存日志。启用渠道后，有货提醒会发送门店、型号与官网链接；保存设置不会发送消息。</p>
+    </section>
+
+    <section class="card checkout-card">
+      <div class="section-heading"><div><p class="step">04</p><h2>实验性 iPhone 自动购买 · 邮寄</h2></div><span id="checkout-status" class="status-badge idle">尚未启动</span></div>
+      <p class="settings-note">实站自动下单尚未验收，Apple Watch 暂不支持自动购买。程序检查购物袋、选择指定规格并辅助结账；使用官网已有的登录和收货信息，缺少信息时停止。运行时需要保持 Chrome 打开，首次测试请保持提交授权未勾选。</p>
+      <div class="field-grid" style="margin-top:16px">
+        <label><span>购买型号</span><select id="checkout-model"></select></label>
+        <label><span>购买容量</span><select id="checkout-capacity"></select></label>
+        <label><span>购买颜色</span><select id="checkout-color"></select></label>
+        <label><span>订单金额上限（元，含运费）</span><input id="checkout-budget" type="number" min="1" step="1" placeholder="请填写本次订单最高金额"></label>
+      </div>
+      <label class="check-line"><input id="checkout-submit" type="checkbox"><span>允许程序生成 1 件未付款订单；不执行支付</span></label>
+      <label class="check-line"><input id="checkout-terms" type="checkbox"><span>已阅读并同意 <a href="https://www.apple.com.cn/shop/browse/open/salespolicies" target="_blank" rel="noopener">Apple 销售条款</a>，使用官网当前收货及发票信息</span></label>
+      <label class="check-line"><input id="checkout-replace" type="checkbox"><span>允许更改购物袋内同款、同容量单件商品的颜色</span></label>
+      <label class="check-line"><input id="checkout-new" type="checkbox"><span>已核对上次订单，本次明确创建一个新订单</span></label>
+      <div class="settings-actions"><button id="checkout-start" class="primary">启动自动购买</button><button id="checkout-resume" class="secondary">补全信息后继续</button><button id="checkout-stop" class="ghost">停止购买</button><button id="checkout-open" class="ghost">查看购买页面</button></div>
+      <p id="checkout-message" class="form-message" role="status"></p><div id="checkout-log" class="logs"></div>
+    </section>
+
+    <section class="card log-card">
+      <div class="section-heading compact">
+        <div><p class="step">04</p><h2>监控日志</h2></div>
+        <span id="last-check">尚未检查</span>
+      </div>
+      <div id="logs" class="logs" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer><a href="https://aigoodbro.com" target="_blank" rel="noopener">官网 aigoodbro.com</a> · 库存信息来自 Apple 官网，供货以结账页面为准。<a href="licenses/Sunbelife-LICENSE">GPL-3.0</a> · <a href="SOURCES.md">来源与修改说明</a> · 本软件不提供担保。</footer>
+  <script type="module" src="app.js"></script>
+  <script type="module" src="checkout-ui.js"></script>
+</body>
+</html>

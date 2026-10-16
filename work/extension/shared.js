@@ -1,0 +1,151 @@
+export const AREAS = [
+  { code: "cn", title: "中国大陆" },
+  { code: "hk", title: "香港" },
+  { code: "jp", title: "日本" },
+  { code: "sg", title: "新加坡" },
+  { code: "us", title: "美国" },
+  { code: "uk", title: "英国" },
+  { code: "au", title: "澳大利亚" }
+];
+
+export const CHECK_INTERVAL_MINUTES = 0.5;
+
+const WATCH_PATHS = {
+  watchs12: "/shop/buy-watch/apple-watch",
+  watchse3: "/shop/buy-watch/apple-watch-se",
+  watchultra4: "/shop/buy-watch/apple-watch-ultra"
+};
+
+export function appleBaseURL(areaCode) {
+  if (areaCode === "cn") {
+    return "https://www.apple.com.cn";
+  }
+  if (areaCode === "us") {
+    return "https://www.apple.com";
+  }
+  if (["hk", "jp", "sg", "uk", "au"].includes(areaCode)) {
+    return "https://www.apple.com/" + areaCode;
+  }
+  throw new Error("不支持的地区: " + areaCode);
+}
+
+export function productPurchaseURL(task) {
+  const baseURL = appleBaseURL(task.areaCode);
+  const defaultWatchPath = WATCH_PATHS[task.product.Type];
+  if (defaultWatchPath) {
+    const purchasePath = String(task.product.PurchasePath || defaultWatchPath).trim();
+    if (purchasePath !== defaultWatchPath && !purchasePath.startsWith(defaultWatchPath + "/")) {
+      throw new Error("手表选配地址无效");
+    }
+    return baseURL + purchasePath;
+  }
+
+  const code = String(task.product.Code || "").replace(/^\/+|\/+$/g, "");
+  if (!code) {
+    throw new Error("产品 SKU 为空");
+  }
+  if (task.product.Type === "iphoneduo") {
+    return baseURL + "/shop/buy-iphone/iphone-duo/" + code.toLowerCase();
+  }
+  if (task.product.Type === "iphone17") {
+    return baseURL + "/shop/buy-iphone/iphone-17/" + code.toLowerCase();
+  }
+  return baseURL + "/shop/product/" + code;
+}
+
+export function buildFulfillmentPath(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    throw new Error("监控任务为空");
+  }
+
+  const first = tasks[0];
+  appleBaseURL(first.areaCode);
+  for (const task of tasks) {
+    if (task.areaCode !== first.areaCode || task.store.StoreNumber !== first.store.StoreNumber) {
+      throw new Error("一次请求只能查询同地区、同门店的任务");
+    }
+    if (!task.store.StoreNumber || !task.product.Code) {
+      throw new Error("查询缺少门店或产品 SKU");
+    }
+  }
+
+  const params = new URLSearchParams({ pl: "true" });
+  tasks.forEach((task, index) => {
+    params.set("mts." + index, "regular");
+    params.set("parts." + index, task.product.Code);
+  });
+
+  // The bundled District fields contain postal codes except Hong Kong, where they
+  // are empty. Keep the upstream store selector and add only a valid postal code.
+  const postalPatterns = {
+    cn: /^\d{6}$/,
+    jp: /^\d{3}-\d{4}$/,
+    sg: /^\d{6}$/,
+    us: /^\d{5}(?:-\d{4})?$/,
+    uk: /^[A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2}$/i,
+    au: /^\d{4}$/
+  };
+  const postalCode = String(first.store.District || "").trim();
+  if (postalPatterns[first.areaCode]?.test(postalCode)) {
+    params.set("location", postalCode);
+  }
+  if (first.areaCode === "jp") {
+    params.set("cppart", "UNLOCKED_JP");
+  } else {
+    params.set("store", first.store.StoreNumber);
+  }
+
+  const localePrefix = ["hk", "jp", "sg", "uk", "au"].includes(first.areaCode)
+    ? "/" + first.areaCode
+    : "";
+  return localePrefix + "/shop/retail/pickup-message?" + params.toString();
+}
+
+function findAvailability(stores, storeNumber, productCode) {
+  const store = stores.find((candidate) => candidate && String(candidate.storeNumber) === String(storeNumber));
+  const availability = store?.partsAvailability?.[productCode];
+  if (!availability) {
+    return null;
+  }
+  const rawDisplay = availability.pickupDisplay ?? availability.messageTypes?.regular?.pickupDisplay;
+  const pickupDisplay = typeof rawDisplay === "string" ? rawDisplay : "";
+  return {
+    known: pickupDisplay === "available" || pickupDisplay === "unavailable",
+    available: pickupDisplay === "available",
+    pickupDisplay
+  };
+}
+
+export function parseStockResponse(payload, storeNumber, productCode) {
+  if (!storeNumber || !productCode) {
+    return { known: false, available: false, pickupDisplay: "" };
+  }
+  const rootStores = payload?.body?.stores;
+  if (Array.isArray(rootStores)) {
+    return findAvailability(rootStores, storeNumber, productCode) ||
+      { known: false, available: false, pickupDisplay: "" };
+  }
+
+  const pickupMessage = payload?.body?.content?.pickupMessage;
+  const stores = pickupMessage?.stores;
+  if (Array.isArray(stores)) {
+    return findAvailability(stores, storeNumber, productCode) ||
+      { known: false, available: false, pickupDisplay: "" };
+  }
+
+  return { known: false, available: false, pickupDisplay: "" };
+}
+
+export function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+export function groupProductsByModel(productGroups) {
+  const models = {};
+  for (const product of Object.values(productGroups || {}).flat()) {
+    if (product?.Model) {
+      (models[product.Model] ||= []).push(product);
+    }
+  }
+  return models;
+}
