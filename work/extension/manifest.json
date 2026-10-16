@@ -3,7 +3,7 @@
   "name": "iPhoneduo助手aigoodbro",
   "homepage_url": "https://aigoodbro.com",
   "description": "Java 后台监控库存，Chrome 提供实验性 iPhone 结账辅助；实站自动下单尚未验收。",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "minimum_chrome_version": "120",
   "permissions": [
     "nativeMessaging",
@@ -23,7 +23,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "1016v6",
+  "version_name": "1016v8",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxLAGJ/WPG/bWcZVcjyfcJ+e0aLrNMMJ+L7bmHzMQ3gc6nfhGaUePlTDkI5JExzjYG8wqtNJVN6RjlCy4i8aLwBTfJbR06A/6b+mCiqKlU7nFSLg80uMY1E6MfJ1rLQdZ4tNm03bq9XmR2vPTPF7RhUBuMSB/NxMjGxXCKJOsovaR9PyuGAEvGHqJu3ggvdGhMVyLq3euKDKVfLXYH+i2byYQ8D4eB/8+keWuK9dMWJf7j+sPIfpGdn43w/O9aKOt7GinjhKgh4FWBzCFqZNzA3Z3OoNysc7YYAwLh7xVA1HT6bAGccZkVnfu9DgjzkIFOD8uBIw+dCGP8USBRVyrkwIDAQAB",
   "content_scripts": [
     {
@@ -46,6 +46,7 @@
       ],
       "js": [
         "checkout-dom.js",
+        "checkout-pickup.js",
         "checkout-content.js"
       ],
       "run_at": "document_idle",

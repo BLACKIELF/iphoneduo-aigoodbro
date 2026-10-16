@@ -3,6 +3,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test *.test.js",
-    "check": "node --check app.js && node --check background.js && node --check native-client.js && node --check shared.js && node --check notifications.js && node --check checkout-controller.js && node --check checkout-content.js && node --check checkout-dom.js && node --check checkout-ui.js && node --check checkout-state.js && node --check inventory-page-client.js && node --check inventory-content.js && node --check inventory-page-bridge.js"
+    "check": "node --check app.js && node --check background.js && node --check native-client.js && node --check shared.js && node --check notifications.js && node --check checkout-controller.js && node --check checkout-content.js && node --check checkout-dom.js && node --check checkout-ui.js && node --check checkout-state.js && node --check inventory-page-client.js && node --check inventory-content.js && node --check inventory-page-bridge.js && node --check checkout-pickup.js"
   }
 }

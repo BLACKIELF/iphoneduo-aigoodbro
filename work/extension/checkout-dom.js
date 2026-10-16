@@ -33,22 +33,30 @@
     if (!/Apple\s*Store/.test(norm(body)) || !/(?:销售条款|条款(?:和|与)条件)/.test(norm(body))) return false;
     return links.some(href => { try { const url = new URL(href); return url.protocol === 'https:' && /^(?:www\.)?apple\.com\.cn$/.test(url.hostname) && !url.port && /(?:\/salespolicies(?:\/|$)|\/legal\/sales-support\/sales-policies(?:\/|$))/.test(url.pathname); } catch { return false; } });
   }
+  function pickupStoreMatches(snapshot, intent) {
+    if (intent?.fulfillment !== 'pickup') return false;
+    const expected = intent.pickup;
+    if (!expected || !/^R\d{1,8}$/.test(expected.storeNumber || '') || !norm(expected.storeName)) return false;
+    if (snapshot.pickupStoreNumber) return snapshot.pickupStoreNumber === expected.storeNumber;
+    return !!norm(snapshot.pickupStoreName) && compact(snapshot.pickupStoreName) === compact(expected.storeName);
+  }
   function validateIntent(intent) {
-    return !!intent && !!parseProduct(`${intent.product?.Model} ${intent.product?.Capacity} ${intent.product?.Color}`) && intent.quantity === 1 && Number.isFinite(intent.maxTotal) && intent.maxTotal > 0 && typeof intent.allowSubmit === 'boolean' && typeof intent.acknowledgedTerms === 'boolean';
+    return !!intent && !!parseProduct(`${intent.product?.Model} ${intent.product?.Capacity} ${intent.product?.Color}`) && intent.quantity === 1 && Number.isFinite(intent.maxTotal) && intent.maxTotal > 0 && typeof intent.allowSubmit === 'boolean' && typeof intent.acknowledgedTerms === 'boolean' && [undefined, 'delivery', 'pickup'].includes(intent.fulfillment) && (intent.fulfillment !== 'pickup' || (!!intent.pickup && /^R\d{1,8}$/.test(intent.pickup.storeNumber || '') && !!norm(intent.pickup.storeName) && intent.pickup.slotPolicy === 'earliest'));
   }
   function validateFinal(snapshot, intent) {
     const issues = [];
     if (!validateIntent(intent)) issues.push('invalid-intent');
     if (snapshot.stage !== 'REVIEW') issues.push('not-review');
-    if (!intent?.allowSubmit || !intent?.acknowledgedTerms) issues.push('submission-not-authorized');
+    if (!intent?.allowSubmit || !intent?.acknowledgedTerms || intent.runMode === 'review') issues.push('submission-not-authorized');
     if (!sameProduct(snapshot.product, intent?.product)) issues.push('product-mismatch');
     if (!Array.isArray(snapshot.cartItems) || snapshot.cartItems.length !== 1 || !sameProduct(snapshot.cartItems[0]?.product, intent?.product) || snapshot.cartItems[0]?.quantity !== 1 || snapshot.quantity !== 1) issues.push('cart-mismatch');
     if (snapshot.currency !== 'CNY' || !Number.isFinite(snapshot.total) || snapshot.total <= 0 || snapshot.total > intent?.maxTotal) issues.push('price-mismatch');
-    if (snapshot.fulfillment !== 'delivery') issues.push('fulfillment-mismatch');
+    if (snapshot.fulfillment !== (intent?.fulfillment || 'delivery')) issues.push('fulfillment-mismatch');
+    if (intent?.fulfillment === 'pickup' && !pickupStoreMatches(snapshot, intent)) issues.push('pickup-store-mismatch');
     if (snapshot.paymentMethod !== 'alipay') issues.push('payment-mismatch');
     if (!snapshot.termsPresent) issues.push('terms-not-visible');
     if (snapshot.issues?.length) issues.push(...snapshot.issues);
     return [...new Set(issues)];
   }
-  root.AppleCheckoutDOM = Object.freeze({norm, compact, parseProduct, sameProduct, sameVariantFamily, parseMoney, officialLocation, reviewHeading, emptyBagText, outOfStockText, salesTermsPresent, validateIntent, validateFinal});
+  root.AppleCheckoutDOM = Object.freeze({norm, compact, parseProduct, sameProduct, sameVariantFamily, parseMoney, officialLocation, reviewHeading, emptyBagText, outOfStockText, salesTermsPresent, pickupStoreMatches, validateIntent, validateFinal});
 })(globalThis);

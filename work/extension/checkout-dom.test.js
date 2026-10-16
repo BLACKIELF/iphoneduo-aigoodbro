@@ -24,3 +24,11 @@ test('iPhone 17 mist blue is exact and never collapses into generic or ice blue'
   assert(D.sameProduct(parsed,target));
   for(const Color of ['蓝色','冰川蓝色'])assert(!D.sameProduct({...parsed,Color},target));
 });
+
+test('pickup final store prioritizes ID and uses strict exact name only when ID is absent',()=>{
+ const i={...intent,fulfillment:'pickup',runMode:'submit',pickup:{storeNumber:'R617',storeName:'Apple 长沙',slotPolicy:'earliest'}};
+ const s={...review(),fulfillment:'pickup',pickupStoreNumber:'R617',pickupStoreName:'Apple 长沙'};
+ assert.deepEqual(D.validateFinal(s,i),[]);assert(D.validateFinal({...s,pickupStoreNumber:'R999'},i).includes('pickup-store-mismatch'));
+ assert.deepEqual(D.validateFinal({...s,pickupStoreNumber:''},i),[]);assert(D.validateFinal({...s,pickupStoreNumber:'',pickupStoreName:'长沙'},i).includes('pickup-store-mismatch'));assert(D.validateFinal({...s,pickupStoreNumber:'',pickupStoreName:''},i).includes('pickup-store-mismatch'));
+ assert(D.validateFinal(s,{...i,runMode:'review'}).includes('submission-not-authorized'));
+});

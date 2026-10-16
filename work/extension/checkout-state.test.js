@@ -5,6 +5,7 @@ import { validateCheckoutIntent, createCheckoutState, advanceCheckout, recoverCh
 const product = { Code: "MJTF4CH/A", Model: "iPhone 18 Pro", Capacity: "512GB", Color: "冰川蓝色", Type: "iphone18pro" };
 const intent = { intentId: "test-blue", revision: 1, product, areaCode: "cn", fulfillment: "delivery", quantity: 1, maxTotal: 11999, allowSubmit: true, acknowledgedTerms: true };
 const review = { type: "OBSERVE", phase: "REVIEW", product, cartItems: [{ product, quantity: 1 }], quantity: 1, total: 11999, currency: "CNY", fulfillment: "delivery", paymentMethod: "alipay" };
+const pickup = { storeNumber: "R683", storeName: "Apple 上海环球港", region: { state: "上海市", city: "上海市", address: "普陀区中山北路 3300 号" } };
 const fresh = changes => createCheckoutState({ ...intent, ...changes }, 1000);
 const advance = (observation, state = fresh()) => advanceCheckout(state, observation, 2000);
 
@@ -16,8 +17,43 @@ test("intent defaults to no submission and no accepted terms", () => {
     assert.throws(() => validateCheckoutIntent({ ...intent, [field]: null }), TypeError);
   }
   assert.throws(() => validateCheckoutIntent({ ...intent, allowSubmit: "true" }), /布尔/);
-  assert.throws(() => validateCheckoutIntent({ ...intent, fulfillment: "pickup" }), /邮寄/);
+  assert.throws(() => validateCheckoutIntent({ ...intent, fulfillment: "pickup" }), /自提/);
   assert.throws(() => validateCheckoutIntent({ ...intent, quantity: 2 }), /一件/);
+});
+
+test("pickup schema, legacy defaults and explicit review mode are normalized", () => {
+  assert.equal(validateCheckoutIntent(intent).entryMode, "product");
+  assert.equal(validateCheckoutIntent(intent).runMode, "submit");
+  const configured = validateCheckoutIntent({ ...intent, fulfillment: "pickup", pickup, entryMode: "bag", runMode: "review" });
+  assert.equal(configured.pickup.slotPolicy, "earliest");
+  assert.equal(configured.allowSubmit, false);
+  assert.equal(configured.entryMode, "bag");
+  for (const change of [{ storeNumber: "683" }, { storeNumber: "R-683" }, { storeName: "" }, { region: { ...pickup.region, city: "" } }, { slotPolicy: "random" }]) {
+    assert.throws(() => validateCheckoutIntent({ ...intent, fulfillment: "pickup", pickup: { ...pickup, ...change } }), TypeError);
+  }
+  for (const change of [{ entryMode: "existing-bag" }, { runMode: "pay" }]) assert.throws(() => validateCheckoutIntent({ ...intent, ...change }), TypeError);
+});
+
+test("pickup review requires exact fulfillment and authoritative store identity", () => {
+  const configured = fresh({ fulfillment: "pickup", pickup, entryMode: "bag" });
+  const observation = { ...review, fulfillment: "pickup", pickupStoreNumber: "R683", pickupStoreName: "other display" };
+  assert.equal(advance(observation, configured).effect.type, "SUBMIT_ORDER");
+  assert.equal(advance({ ...observation, pickupStoreNumber: undefined, pickupStoreName: "  Apple  上海环球港  " }, configured).effect.type, "SUBMIT_ORDER");
+  for (const change of [
+    { fulfillment: "delivery" }, { pickupStoreNumber: "R999", pickupStoreName: pickup.storeName },
+    { pickupStoreNumber: undefined, pickupStoreName: undefined },
+    { pickupStoreNumber: undefined, pickupStoreName: "Apple 上海环球港附近门店" }
+  ]) assert.equal(advance({ ...observation, ...change }, configured).state.status, "BLOCKED");
+});
+
+test("bag-only mode cannot select products and review mode can never submit", () => {
+  assert.equal(advance({ type: "OBSERVE", phase: "PRODUCT" }, fresh({ entryMode: "bag" })).state.status, "BLOCKED");
+  const result = advance(review, fresh({ runMode: "review", allowSubmit: true, acknowledgedTerms: true }));
+  assert.equal(result.state.status, "READY_TO_SUBMIT");
+  assert.equal(result.effect.type, "WAIT");
+  assert.equal(result.effect.reason, "REVIEW_ONLY");
+  assert.equal(result.state.submitAttempt, null);
+  assert.ok(advance({ type: "OBSERVE", phase: "CHECKOUT" }, fresh({ fulfillment: "pickup", pickup })).effect.allowedActions.includes("PICKUP_STEP"));
 });
 
 test("direct intents reject unsupported products and mismatched iPhone family metadata", () => {
@@ -100,6 +136,18 @@ test("submission needs both explicit switches and accepts an exact cap", () => {
   assert.equal(result.effect.revision, intent.revision);
 });
 
+test("review issues block before a submission attempt can be consumed", () => {
+  for (const issues of [["fulfillment-ambiguous"], ["pickup-store-mismatch", "extra-item"], [null], "invalid"]) {
+    const result = advance({ ...review, issues });
+    assert.equal(result.state.status, "BLOCKED");
+    assert.equal(result.effect.type, "STOP");
+    assert.equal(result.state.submitAttempt, null);
+    assert.ok(result.state.reason);
+    assert.ok(result.state.reason.length <= 240);
+  }
+  assert.equal(advance({ ...review, issues: [] }).effect.type, "SUBMIT_ORDER");
+});
+
 test("normalizes whitespace without accepting a different colour", () => {
   const result = advance({ ...review, product: { ...product, Model: " iPhone  18 Pro ", Capacity: "512 GB" } });
   assert.equal(result.effect.type, "SUBMIT_ORDER");
@@ -159,6 +207,34 @@ test("receipt without product requires an exact current attempt binding", () => 
   for (const changes of [{ intentId: "previous-run" }, { revision: 2 }, { attemptId: "previous-attempt" }]) {
     assert.equal(advance({ ...receipt, receiptBinding: { ...receiptBinding, ...changes } }, pending).state.status, "SUBMISSION_UNKNOWN");
   }
+});
+
+test("pickup receipts reject explicit fulfillment or store conflicts even with a matching attempt binding", () => {
+  const pending = advance({ ...review, fulfillment: "pickup", pickupStoreNumber: pickup.storeNumber }, fresh({ fulfillment: "pickup", pickup })).state;
+  const receiptBinding = { intentId: intent.intentId, revision: intent.revision, attemptId: pending.submitAttempt.attemptId };
+  const receipt = { type: "OBSERVE", phase: "ORDER_CREATED", product, orderNumber: "W1234567890", unpaid: true, receiptVerified: true, fulfillment: "pickup", pickupStoreNumber: pickup.storeNumber };
+  assert.equal(advance(receipt, pending).state.status, "ORDER_CREATED_UNPAID");
+  for (const change of [
+    { fulfillment: "delivery" }, { pickupStoreNumber: "R999", pickupStoreName: pickup.storeName },
+    { pickupStoreNumber: undefined, pickupStoreName: "Apple 其他门店" }
+  ]) {
+    for (const binding of [undefined, receiptBinding]) {
+      const result = advance({ ...receipt, ...change, receiptBinding: binding }, pending);
+      assert.equal(result.state.status, "SUBMISSION_UNKNOWN");
+      assert.equal(result.effect.type, "STOP");
+      assert.equal(advance(review, result.state).effect.type, "STOP");
+    }
+  }
+});
+
+test("pickup receipts with missing evidence need an exact attempt binding", () => {
+  const pending = advance({ ...review, fulfillment: "pickup", pickupStoreNumber: pickup.storeNumber }, fresh({ fulfillment: "pickup", pickup })).state;
+  const receipt = { type: "OBSERVE", phase: "ORDER_CREATED", product, orderNumber: "W1234567890", unpaid: true, receiptVerified: true };
+  assert.equal(advance(receipt, pending).state.status, "SUBMISSION_UNKNOWN");
+  assert.equal(advance({ ...receipt, fulfillment: "pickup", pickupStoreName: " Apple  上海环球港 " }, pending).state.status, "ORDER_CREATED_UNPAID");
+  const receiptBinding = { intentId: intent.intentId, revision: intent.revision, attemptId: pending.submitAttempt.attemptId };
+  assert.equal(advance({ ...receipt, receiptBinding }, pending).state.status, "ORDER_CREATED_UNPAID");
+  assert.equal(advance({ ...receipt, receiptBinding: { ...receiptBinding, attemptId: "previous-attempt" } }, pending).state.status, "SUBMISSION_UNKNOWN");
 });
 
 test("cancelling a submitted attempt keeps uncertainty and completed receipts stay final", () => {

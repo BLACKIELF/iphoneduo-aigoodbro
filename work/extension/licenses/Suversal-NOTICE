@@ -1,0 +1,205 @@
+================================================================================
+NOTICE — 来源、版权与修改声明
+================================================================================
+
+本项目 apple-store-inventory-monitor 直接基于下述项目继续开发：
+
+    直接上游名称  Apple Pickup Watcher (apple-pickup-watcher)
+    直接上游地址  https://github.com/ENCHIGO/apple-pickup-watcher
+    上游维护者    ENCHIGO  <https://github.com/ENCHIGO>
+    起始版本      v0.3.2（提交 fd17a41）
+    上游许可      GNU General Public License, version 3 or later
+
+直接上游是下述早期项目的修改版本（硬分叉重写）：
+
+    原项目名称  Apple Store 预约助手 (apple-store-helper)
+    原项目地址  https://github.com/hteen/apple-store-helper
+    原项目作者  Hteen  <https://github.com/hteen>
+    原项目许可  GNU General Public License, version 3 (GPL-3.0)
+
+直接上游自 2026-08-08 起把实现语言由 Go 改为 Rust，界面框架由 Fyne 改为 Tauri，
+并移除了原有 Go 代码。本仓库保留了直接上游截至 v0.3.2 的 Git 历史，并在其上继续
+修改。**这些重写与后续修改都不改变派生关系**：本项目内嵌的门店与商品数据直接
+来自早期项目，产品目标和交互流程也承继自早期项目。因此 GPL-3.0 的义务继续完整
+适用，重写或更名都不构成「另起炉灶」。
+
+早期项目贡献者（依其 README 所列）：
+
+    @Hteen      https://github.com/hteen
+    @Timssse    https://github.com/Timssse
+    @Black-Hole https://github.com/BlackHole1
+    @RayJason   https://github.com/RayJason
+    @Warkeeper  https://github.com/Warkeeper
+
+直接上游的具体贡献者和提交记录可在保留的 Git 历史以及
+https://github.com/ENCHIGO/apple-pickup-watcher/graphs/contributors 查看。
+
+版权声明：
+
+    Copyright (C) 2020-2025 Hteen and the apple-store-helper contributors
+    Copyright (C) 2026 the apple-pickup-watcher contributors
+    Copyright (C) 2026 the apple-store-inventory-monitor contributors
+
+原项目的许可条款以 GPL-3.0 全文形式完整保留在本仓库根目录的 LICENSE 文件中，
+未作任何删改。
+
+
+--------------------------------------------------------------------------------
+修改声明（依据 GPL-3.0 第 5 条 a 款）
+--------------------------------------------------------------------------------
+
+本仓库包含直接上游截至 v0.3.2 的代码和提交历史，以及此后对应用名称、包标识、
+监控流程、提醒行为和查询会话所作的修改。直接上游对早期项目进行过显著重写；
+本仓库在该重写版本上继续开发。
+
+    直接上游修改者  apple-pickup-watcher 项目维护者
+    后续修改者      apple-store-inventory-monitor 项目维护者
+
+    2026-08-06  初次派生。以 Go + Fyne 重新实现，更换库存查询接口，引入三态
+                库存模型，重写轮询调度、HTTP 客户端与设置存储（对应版本 v0.1.x）。
+
+    2026-08-08  第二次重写。实现语言改为 Rust（edition 2024），界面框架改为
+                Tauri v2 + React，Go 代码全部删除（对应版本 v0.2.0）。
+
+
+修改摘要
+--------
+
+以下第 1 至 8 项自 2026-08-06 起生效，描述的是本项目相对**原项目**的改动，
+在 Rust 重写后依然成立；第 9 至 12 项为 2026-08-08 重写时新增，第 13 项为
+2026-08-28 新增，第 14 项为 2026-09-08 新增。
+
+  1. 库存查询会话与解析逻辑整体重写。
+     Apple 当前商品页会先执行浏览器环境校验，缺少有效页面会话的直接 HTTP 请求
+     可能返回 541。应用使用独立临时 Chromium 会话访问当前
+     /shop/fulfillment-messages 接口，并重写请求构造与响应解析逻辑；任何被拦截的
+     查询都显示为「未知」，不会误报成「无货」。
+
+  2. 引入「有货 / 无货 / 未知」三态库存模型。
+     原项目在请求失败时把结果退化为「无货」，导致失效表现为「界面正常但永远
+     显示无货」。本项目把「查询失败」提升为与另两者平级的独立状态，并区分被
+     拦截、被限流、响应结构不符、业务报错、网络失败五类可判定的失败原因。
+
+  3. 重写轮询调度。
+     原项目采用固定 500 毫秒一轮的无退出条件循环。本项目改为默认 30 秒、带
+     随机抖动与失败指数退避、可随时取消的调度引擎，并按门店聚合请求。
+
+  4. 重写 HTTP 客户端。
+     原项目每次查询都新建客户端实例，连接池无法复用。本项目在进程内复用单个
+     客户端与连接池，并加入全局最小请求间隔。
+
+  5. 消除后台任务中的进程级崩溃。
+     原项目在提示音播放、推送通知、商品与门店查找等路径上直接 panic，任一处
+     触发都会终止整个进程。本项目将全部此类失败改为返回值处理。
+
+  6. 消除跨线程共享状态上的数据竞争。
+     原项目在界面线程与轮询任务之间无锁共享 map，会触发运行时 fatal error 并
+     直接终止进程。本项目改用消息传递，不存在共享可变状态（见第 10 项）。
+
+  7. 设置存储位置与写入方式变更。
+     原项目将设置写入进程工作目录，打包后该目录可能不可写，设置会静默丢失。
+     本项目改为写入操作系统约定的用户配置目录，采用「写临时文件后原子改名」
+     的方式落盘，并对读取施加大小上限；读取失败时放弃写盘并将原文件改名留档，
+     不会用默认配置覆盖用户数据。
+
+  8. 商品目录改为可在线获取。
+     原项目的机型清单需要人工从浏览器开发者工具中复制并硬编码。本项目可直接
+     从 Apple 官网购买页解析获取，同时保留内置数据作为离线兜底。
+
+  9. 实现语言与界面框架更换。
+     Go + Fyne 改为 Rust（edition 2024）+ Tauri v2 + React 19 + TypeScript。
+     代码分为 apw-core（核心逻辑，不依赖任何界面框架）与
+     apple-store-inventory-monitor（Tauri 外壳）两层，全部业务判断位于前者。
+
+ 10. 调度引擎改用 actor 模型。
+     状态由单个任务独占，外部只能通过消息与之交互，不再有共享可变状态、锁序
+     与「放锁去等待」的时间窗口。
+
+ 11. 新增系统托盘、应用内更新检查与旧版设置迁移。
+     关闭窗口时收进托盘而非退出；应用内可检查新版本但不静默安装；设置文件
+     改名为 settings.v2.json，首次启动时可从原项目格式的 settings.json 迁移，
+     且不修改后者。
+
+ 12. 新增针对 Apple 真实接口的契约测试。
+     该测试默认不参与常规测试运行，需显式启用 live 特性；用于在 Apple 变更
+     接口时及时发现，而非等到用户看见一屏永远不变的「无货」。
+
+ 13. 监控范围从 iPhone 扩展到 iPad、Mac 与 Apple Watch（2026-08-28）。
+     原项目只支持 iPhone。本项目按品类组织购买页，并支持 Apple 购买页的两种
+     商品数据排布（iPhone / iPad 的平铺字段，与 Mac / Apple Watch 的维度表），
+     内置离线快照改由 crates/apw-core/data/generate.py 生成。
+
+ 14. 项目更名并与旧包分离（2026-09-08）。
+     英文项目名改为 Apple Store Inventory Monitor，仓库与包名改为
+     apple-store-inventory-monitor，应用标识改为
+     com.suversal.apple-store-inventory-monitor。新包使用独立配置目录，并在首次
+     启动时只读迁移 apple-pickup-watcher 的现有设置。
+
+
+--------------------------------------------------------------------------------
+本项目的许可
+--------------------------------------------------------------------------------
+
+依据 GPL-3.0 第 5 条 b、c 两款，本项目整体同样以
+GNU General Public License version 3 授权发布。
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+许可全文见本仓库根目录的 LICENSE 文件。
+
+
+--------------------------------------------------------------------------------
+承自原项目的资源
+--------------------------------------------------------------------------------
+
+    crates/apw-core/assets/alert.mp3   到货提示音，承自原项目
+    crates/apw-core/data/stores.json   门店数据，来自原项目并做了结构调整
+    crates/apw-core/data/products_*.json
+                                       商品数据，来自原项目并做了结构调整
+
+以上文件随原项目一同以 GPL-3.0 分发，在本项目中继续适用该许可。
+
+原项目 assets 下的字体文件（font.ttf）随 Fyne 界面一并移除，本项目不再包含。
+
+
+--------------------------------------------------------------------------------
+第三方组件
+--------------------------------------------------------------------------------
+
+本项目在构建或运行时使用以下第三方组件，它们各自的许可条款独立于本项目。
+下表列出主要依赖；完整清单与各自许可的准确取值，以 `cargo metadata` 与
+`pnpm licenses list` 的输出为准。
+
+Rust 侧：
+
+    tauri                      MIT OR Apache-2.0
+    tokio                      MIT
+    reqwest                    MIT OR Apache-2.0
+    serde / serde_json         MIT OR Apache-2.0
+    thiserror                  MIT OR Apache-2.0
+    rand                       MIT OR Apache-2.0
+    rodio                      MIT OR Apache-2.0
+    dirs                       MIT OR Apache-2.0
+
+前端侧：
+
+    react / react-dom          MIT
+    radix-ui                   MIT
+    tailwindcss                MIT
+    lucide-react               ISC
+    cmdk                       MIT
+    vite                       MIT
+    typescript                 Apache-2.0
+
+src/components/ui/ 下的组件基于 shadcn/ui（MIT）生成，并按本项目需要作了修改。

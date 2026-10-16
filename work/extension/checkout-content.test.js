@@ -7,12 +7,13 @@ import {advanceCheckout, createCheckoutState} from './checkout-state.js';
 const product = {Code:'MJTF4CH/A', Model:'iPhone 18 Pro', Capacity:'512GB', Color:'冰川蓝色', Type:'iphone18pro'};
 const intent = {intentId:'content-snapshot-test', revision:1, product, areaCode:'cn', fulfillment:'delivery', quantity:1, maxTotal:11999, allowSubmit:true, acknowledgedTerms:true};
 const domSource = readFileSync(new URL('./checkout-dom.js', import.meta.url), 'utf8');
+const pickupSource = readFileSync(new URL('./checkout-pickup.js', import.meta.url), 'utf8');
 const contentSource = readFileSync(new URL('./checkout-content.js', import.meta.url), 'utf8');
 const productName = color => `iPhone 18 Pro 512GB ${color || product.Color}`;
 
 // A local DOM fixture for the selectors used by the content script. Clicks only
 // increment a counter; there is no browser, network, or navigation.
-function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, selectedLabel, totals=[], errors=[], looseNames=[], paymentChoices=[], images=[], links=[]} = {}) {
+function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, selectedLabel, totals=[], errors=[], looseNames=[], paymentChoices=[], images=[], links=[], bindIntent=intent, step='', controlAutom, pickupChoices=[]} = {}) {
   let clicks = 0;
   const element = (value, attributes={}, appearance={}) => ({
     innerText:value, textContent:value, labels:[], disabled:false,
@@ -33,11 +34,16 @@ function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, select
   });
   names.push(...looseNames.map(name => element(name, {'data-autom':'bag-item-name'})));
   const headings = (Array.isArray(heading) ? heading : heading ? [heading] : []).map(value => element(value));
-  const controls = phase === 'REVIEW' ? [element('立即下单')] : phase === 'CHECKOUT' ? [element('继续选择付款方式')] : [];
+  const controls = phase === 'REVIEW' ? [element('立即下单',controlAutom ? {'data-autom':controlAutom} : {})] : phase === 'CHECKOUT' ? [element('继续选择付款方式')] : [];
   const selected = selectedLabel ? [element('', {'aria-label':selectedLabel})] : [];
   const paymentNodes = paymentChoices.map(choice => {
-    const node = element('', {'aria-label':choice.label, type:choice.type || 'radio', name:'paymentMethod'}, choice);
-    node.checked = choice.checked === true;
+    const node = element('', {'aria-label':choice.label, type:choice.type || 'radio', name:'paymentMethod', ...(choice.autom ? {'data-autom':choice.autom} : {})}, choice);
+    node.checked = choice.checked === true; node.value = choice.value || '';
+    return node;
+  });
+  const pickupNodes = pickupChoices.map(choice => {
+    const node=element('',{type:'radio',name:'store-locator-result'},choice);node.value=choice.value;node.checked=choice.checked===true;
+    if(choice.title){const title=element(choice.title);const label=element(choice.title);label.querySelectorAll=selector=>selector==='.form-selector-title'?[title]:[];node.labels=[label];}
     return node;
   });
   const imageNodes = images.map(alt => ({...element('', {alt}), alt}));
@@ -50,13 +56,15 @@ function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, select
     ['[data-autom="bag-item-name"]', names],
     ['[data-autom="bag-item"]', items.filter(item => item.getAttribute('data-autom') === 'bag-item')],
     ['[data-autom^="bag-item-"]', [...items, ...names].filter(item => item.getAttribute('data-autom').startsWith('bag-item-'))],
-    ['input:checked', [...selected, ...paymentNodes.filter(node => node.checked)]], ['h1', headings], ['button', controls],
+    ['input:checked', [...selected, ...paymentNodes.filter(node => node.checked), ...pickupNodes.filter(node => node.checked)]],
+    ['input[name="store-locator-result"]',pickupNodes], ['h1', headings], ['button', controls],
     ['img[alt]', imageNodes], ['a[href]', linkNodes],
     ...totals.map(total => [`[data-autom="${total.autom}"]`, totalNodes.filter(node => node.getAttribute('data-autom') === total.autom)]),
     ...errors.map(error => [`.${error.className}`, errorNodes.filter(node => node.getAttribute('class') === error.className)])
   ]);
   const document = {body, documentElement:{}, querySelectorAll:selector => [...new Set(selector.split(',').flatMap(part => selectors.get(part) || []))], getElementById:() => null};
   const location = new URL(`https://secure6.www.apple.com.cn/shop/${phase === 'BAG' ? 'bag' : 'checkout'}`);
+  if (step) location.search = '?_s=' + step;
   const window = {}; window.top = window;
   let listener;
   const runtime = {id:'fixture-extension', onMessage:{addListener:fn => {listener=fn;}}, sendMessage:async () => ({})};
@@ -64,6 +72,7 @@ function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, select
     getComputedStyle:node => node.style,
     MutationObserver:class {observe() {}}, setTimeout, clearTimeout});
   vm.runInContext(domSource, context);
+  vm.runInContext(pickupSource, context);
   vm.runInContext(contentSource, context);
   const nonce = 'fixture-nonce-123456789', runId = 'fixture-run';
   const message = payload => {
@@ -72,7 +81,7 @@ function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, select
     assert(reply, 'content script must answer the fixture message');
     return JSON.parse(JSON.stringify(reply));
   };
-  assert.equal(message({type:'checkout:bind', intent}).ok, true);
+  assert.equal(message({type:'checkout:bind', intent:bindIntent}).ok, true);
   return {
     snapshot:() => message({type:'checkout:snapshot'}).snapshot,
     act:kind => message({type:'checkout:act', actionId:`fixture-action-${kind}`, expectedStage:phase, command:{kind}}),
@@ -344,4 +353,29 @@ test('hidden and empty upstream error nodes do not block a local continuation', 
   assert.deepEqual(fixture.snapshot().issues, []);
   assert.deepEqual(fixture.act('continue-shipping'), {ok:true, acted:true, kind:'continue-shipping'});
   assert.equal(fixture.clicks(), 1);
+});
+
+const pickupIntent = {...intent,fulfillment:'pickup',entryMode:'bag',runMode:'review',allowSubmit:false,pickup:{storeNumber:'R617',storeName:'Apple 长沙',region:{state:'湖南',city:'长沙',address:''},slotPolicy:'earliest'}};
+test('upstream Review URL and placeOrder button are recognized while review-only mode never submits',()=>{
+ const fixture=contentFixture(completeReview({heading:'请检查订单',step:'Review',controlAutom:'continue-button-placeOrder',bindIntent:pickupIntent,bodyText:'取货详情 Apple Store 条款和条件 立即下单\n取货门店：Apple 长沙',totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));
+ const s=fixture.snapshot();assert.equal(s.stage,'REVIEW');assert.equal(s.checkoutStep,'review');assert.equal(s.fulfillment,'pickup');assert.equal(s.pickupStoreName,'Apple 长沙');assert.equal(s.pickupStoreNumber,'');assert.match(fixture.act('submit-order').error,/submission-not-authorized/);assert.equal(fixture.clicks(),0);
+});
+test('pickup submit requires exact current review store and never falls back from a mismatch',()=>{
+ for(const store of ['Apple 武汉','']){const fixture=contentFixture(completeReview({step:'Review',controlAutom:'continue-button-placeOrder',bindIntent:{...pickupIntent,runMode:'submit',allowSubmit:true},bodyText:'取货详情 Apple Store 条款和条件 立即下单'+(store?'\n取货门店：'+store:''),totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.match(fixture.act('submit-order').error,/pickup-store-mismatch/);assert.equal(fixture.clicks(),0);}
+});
+test('pickup verified review submits at most once per action ID and keeps all final guards',()=>{
+ const fixture=contentFixture(completeReview({step:'Review',controlAutom:'continue-button-placeOrder',bindIntent:{...pickupIntent,runMode:'submit',allowSubmit:true},bodyText:'取货详情 Apple Store 条款和条件 立即下单\n取货门店：Apple 长沙',totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.equal(fixture.act('submit-order').ok,true);assert.equal(fixture.act('submit-order').ok,true);assert.equal(fixture.clicks(),1);
+ const mixed=contentFixture(completeReview({step:'Review',bindIntent:{...pickupIntent,runMode:'submit',allowSubmit:true},bodyText:'取货详情 Apple Store 条款和条件 立即下单 礼品卡余额 0\n取货门店：Apple 长沙',totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.match(mixed.act('submit-order').error,/payment-mismatch/);assert.equal(mixed.clicks(),0);
+});
+
+test('upstream selected ALIPAY field is explicit evidence but other billing values remain unknown',()=>{
+ for(const [value,expected] of [['ALIPAY','alipay'],['WECHAT',null],['INSTALLMENT',null]]){const fixture=contentFixture(completeReview({paymentChoices:[{label:'',autom:'checkout-billingOptions-'+value,value,checked:true}],totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.equal(fixture.snapshot().paymentMethod,expected);}
+});
+
+test('Review selected target radio cannot override a contradictory explicit pickup summary',()=>{
+ const target={...pickupIntent,runMode:'submit',allowSubmit:true};
+ const fixture=contentFixture(completeReview({step:'Review',controlAutom:'continue-button-placeOrder',bindIntent:target,pickupChoices:[{value:'R617',title:'Apple 长沙',checked:true}],bodyText:'取货详情 Apple Store 条款和条件 立即下单\n取货门店：Apple 武汉',totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));
+ const s=fixture.snapshot();assert.equal(s.pickupStoreNumber,'R617');assert(s.issues.some(issue=>/门店/.test(issue)));assert.equal(fixture.act('submit-order').ok,false);assert.equal(fixture.clicks(),0);
+ const transition=advanceCheckout(createCheckoutState(target,1000),{type:'OBSERVE',observation:{...s,phase:s.stage}},2000);
+ assert.equal(transition.state.status,'BLOCKED');assert.equal(transition.state.submitAttempt,null);assert.equal(fixture.act('submit-order').ok,false);assert.equal(fixture.clicks(),0);
 });

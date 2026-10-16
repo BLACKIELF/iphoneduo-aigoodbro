@@ -11,6 +11,7 @@ const inventoryPageClient = createInventoryPageClient(chrome);
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 let requestQueue = Promise.resolve();
 let inventoryGeneration = 0;
+const STOCK_ALARM = "checkout-stock-status";
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") openDashboard().catch(() => {});
@@ -33,8 +34,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleMessage(message) {
-  if (["stop-monitor", "save-tasks", "checkout-start"].includes(message?.type)) {
-    inventoryGeneration++;
+  if (["stop-monitor", "start-monitor", "save-tasks", "checkout-start", "checkout-arm"].includes(message?.type)) inventoryGeneration++;
+  if (["stop-monitor", "start-monitor", "save-tasks"].includes(message?.type)) {
+    // Raise the controller cancellation fence before waiting for storage or native responses.
+    await checkoutController.cancelArmed();
+    await syncStockAlarm();
+  }
+  if (["stop-monitor", "start-monitor", "save-tasks", "checkout-start", "checkout-arm"].includes(message?.type)) {
     await storageReady;
     await inventoryPageClient.cancel();
   }
@@ -49,8 +55,18 @@ async function handleMessage(message) {
     return inventoryPageClient.query(task);
   }
   if (message?.type?.startsWith('checkout-')) {
-    await storageReady;
-    try { return await checkoutController.handle(message); }
+    try {
+      if (message.type === 'checkout-stop') {
+        // handle raises the synchronous stop fence before any storage wait.
+        const result = await checkoutController.handle(message);
+        await syncStockAlarm();
+        return result;
+      }
+      await storageReady;
+      const result = await checkoutController.handle(message);
+      await syncStockAlarm();
+      return result;
+    }
     catch (error) { return { ok: false, error: redactText(error.message) || '购买操作失败' }; }
   }
   if (message?.type === "open-dashboard") {
@@ -108,6 +124,8 @@ async function bridgeMessage(message) {
     const snapshot = validateSnapshot(response, saved.notificationSettings);
     const connection = { connected: true, error: "", checkedAt: new Date().toISOString() };
     await chrome.storage.local.set({ ...snapshot, backendConnection: connection });
+    await checkoutController.inventory(snapshot);
+    await syncStockAlarm();
     return { ok: true, connected: true, ...snapshot };
   } catch (error) {
     const detail = safeError(error.message) || "后台未连接，请重新连接";
@@ -145,7 +163,12 @@ function validateSnapshot(response, previousSettings) {
   for (const task of response.tasks) {
     const item = response.monitorState.items[task.id];
     if (item && typeof item === "object") {
-      items[task.id] = { status: clean(item.status), detail: clean(item.detail), checkedAt: clean(item.checkedAt) };
+      if (item.available != null && typeof item.available !== "boolean") throw new Error("后台库存状态格式无效");
+      const identity = `${task.areaCode}:${task.store.StoreNumber}:${task.product.Code}`;
+      items[task.id] = { status: clean(item.status), detail: clean(item.detail),
+        checkedAt: typeof item.checkedAt === "string" && Number.isFinite(Date.parse(item.checkedAt)) ? item.checkedAt : "",
+        available: item.available ?? null, identity: item.identity === identity ? identity : "" };
+
     }
   }
   return {
@@ -171,3 +194,23 @@ async function openDashboard() {
     if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
   } else await chrome.tabs.create({ url: DASHBOARD_URL });
 }
+
+// Poll only the local Java status. This alarm never makes an additional Apple request.
+async function syncStockAlarm() {
+  await storageReady;
+  const { checkoutRun } = await chrome.storage.local.get("checkoutRun");
+  if (checkoutRun?.trigger?.status === "armed" && checkoutRun.state?.status === "WAITING_FOR_STOCK") {
+    if (!await chrome.alarms.get(STOCK_ALARM)) await chrome.alarms.create(STOCK_ALARM, { periodInMinutes: 0.5 });
+  } else await chrome.alarms.clear(STOCK_ALARM);
+}
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== STOCK_ALARM) return;
+  const pending = requestQueue.then(async () => {
+    const { checkoutRun } = await chrome.storage.local.get("checkoutRun");
+    if (checkoutRun?.trigger?.status !== "armed" || checkoutRun.state?.status !== "WAITING_FOR_STOCK") return syncStockAlarm();
+    return bridgeMessage({ type: "get-backend-state" });
+  });
+  requestQueue = pending.catch(() => {});
+});
+chrome.runtime.onStartup.addListener(() => syncStockAlarm().catch(() => {}));
+syncStockAlarm().catch(() => {});

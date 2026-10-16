@@ -31,6 +31,13 @@
     if (href && !href.startsWith('#') && !D.officialLocation(new URL(href, location.href).href)) throw new Error('external-navigation-blocked');
     el.click();
   }
+  const pickupAdapter = globalThis.AppleCheckoutPickup?.create({ document, location, getComputedStyle, click: safeClick,
+    setSelect(el, value) {
+      if (!available(el) || ![...el.options].some(option => option.value === value && !option.disabled)) throw new Error('pickup-slot-unavailable');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(el, value);
+      el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+  });
   function completeProductNodes() {
     const preferred = all('[data-autom="bag-item-name"],[data-autom="review-item-name"],[data-autom="product-name"],.rs-iteminfo-title,h1,h2,h3').filter(visible);
     return preferred.map(el => ({el, product: D.parseProduct(text(el))})).filter(item => item.product);
@@ -76,7 +83,8 @@
     const challenge = all('input[autocomplete="one-time-code"],iframe[src*="captcha"],iframe[title*="验证码"],iframe[title*="验证"]');
     if (challenge.some(visible) || all('h1,h2,[role="dialog"]').filter(visible).some(el => /^(?:验证你的身份|验证您的身份|双重认证|输入验证码|安全验证)/.test(text(el)))) return 'IDENTITY_CHALLENGE';
     if (/(?:订单号|订单编号)\s*[:：]?\s*W\d{8,}/i.test(body)) return 'ORDER_CREATED';
-    if (all('h1,h2').filter(visible).some(el => D.reviewHeading(text(el))) && exactControl(['立即下单'], ['place-order','place-order-button'])) return 'REVIEW';
+    const step = new URL(location.href).searchParams.get('_s') || '';
+    if ((all('h1,h2').filter(visible).some(el => D.reviewHeading(text(el))) || /^Review(?:$|[-_])/i.test(step)) && exactControl(['立即下单'], ['place-order','place-order-button','continue-button-placeOrder'])) return 'REVIEW';
     if (/\/(?:payment|payments)(?:\/|$)/.test(path) || /(?:扫码支付|打开支付宝完成付款|请在\s*\d+\s*分钟内完成支付)/.test(body)) return 'PAYMENT';
     if (/\/shop\/bag(?:\/|$)/.test(path)) return 'BAG';
     if (/\/shop\/(?:checkout|signin)(?:\/|$)/.test(path)) return 'CHECKOUT';
@@ -97,12 +105,13 @@
     const evidence = all('input:checked,[role="radio"][aria-checked="true"]').filter(el => visible(el) || [...(el.labels || [])].some(visible)).map(el => {
       const value = label(el);
       const context = ['name','id','data-autom'].map(key => el.getAttribute(key) || '').join(' ');
-      const paymentControl = /payment|paymethod|billing.?method|gift.?card/i.test(context);
+      const paymentControl = /payment|paymethod|billing.?method|gift.?card|checkout-billingOptions-/i.test(context);
       const paymentLabel = /支付宝|alipay|信用卡|借记卡|银行卡|礼品卡|账户余额|分期|微信|银联|credit\s*card|debit\s*card|gift\s*card|apple\s*pay|paypal|wechat/i.test(value);
       if (!paymentControl && !paymentLabel) return null;
       // Only an explicit selected payment radio proves Alipay. Text, logos,
       // unselected alternatives and ambiguous/mixed labels are not evidence.
-      return (el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && /^(?:支付宝|alipay)$/i.test(value) ? 'alipay' : 'unknown';
+      const explicitAlipay = /^(?:支付宝|alipay)$/i.test(value) || (el.getAttribute('data-autom')?.startsWith('checkout-billingOptions-') && el.value === 'ALIPAY' && !/分期|installment|微信|wechat|信用卡|礼品卡|余额/i.test(value));
+      return (el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && explicitAlipay ? 'alipay' : 'unknown';
     }).filter(Boolean);
     return evidence.length > 0 && evidence.every(value => value === 'alipay') ? 'alipay' : null;
   }
@@ -129,7 +138,7 @@
     const candidates = all('a[href]').filter(available).filter(el => names.includes(label(el)) && /\/shop\/buy-iphone\//.test(new URL(el.href).pathname));
     return candidates.length === 1 ? candidates[0] : null;
   }
-  function controls(currentStage, items) {
+  function controls(currentStage, items, pickup) {
     const result = [];
     if (currentStage === 'PRODUCT') {
       const choice = selectionControl(binding?.intent);
@@ -140,20 +149,24 @@
       if (exactControl(['结账','前往结账'], ['bag-checkout-button','checkout'])) result.push({kind:'checkout'});
       if (editControl(binding?.intent, items)) result.push({kind:'edit-variant'});
     }
-    if (currentStage === 'CHECKOUT') {
+    if (currentStage === 'CHECKOUT' && binding?.intent.fulfillment === 'pickup') {
+      if (pickup?.canAct && !pickup.issues.length) result.push({kind:'pickup-step'});
+    } else if (currentStage === 'CHECKOUT') {
       if (exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款'], ['shipping-continue-button','shipping-address-continue-button'])) result.push({kind:'continue-shipping'});
       if (exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单'], ['review-order-button','billing-continue-button'])) result.push({kind:'continue-billing'});
     }
-    if (currentStage === 'REVIEW' && exactControl(['立即下单'], ['place-order','place-order-button'])) result.push({kind:'submit-order'});
+    if (currentStage === 'REVIEW' && exactControl(['立即下单'], ['place-order','place-order-button','continue-button-placeOrder'])) result.push({kind:'submit-order'});
     return result;
   }
   function snapshot() {
     const currentStage = stage(), items = ['BAG','CHECKOUT','REVIEW','ORDER_CREATED'].includes(currentStage) ? cartItems(['REVIEW','ORDER_CREATED'].includes(currentStage)) : [];
     const body = text(document.body);
+    const pickup = binding?.intent.fulfillment === 'pickup' ? pickupAdapter?.observe(binding.intent) : null;
     const product = items.length === 1 ? items[0].product : selectedProduct();
     const orderNumber = body.match(/(?:订单号|订单编号)\s*[:：]?\s*(W\d{8,})\b/i)?.[1];
     const unpaid = /(?:等待付款|待付款|尚未付款|未付款|请完成付款|立即付款)/.test(body);
-    const issues = [];
+    const issues = [...(pickup?.issues || [])];
+    if (binding?.intent.fulfillment === 'pickup' && !pickupAdapter) issues.push('pickup-adapter-unavailable');
     if (all('[role="alert"],[data-autom="error-message"],.form-message-error,.rs-form-error,.rs-error-message').filter(visible).some(el => text(el))) issues.push('visible-form-error');
     const bagEmpty = currentStage === 'BAG' && items.length === 0 && all('h1,h2,p,[role="status"]').filter(visible).some(el => D.emptyBagText(text(el)));
     const explicitOutOfStock = currentStage === 'PRODUCT' && all('button,[role="status"],[data-autom="availability"],.rf-pdp-fulfillment,p').filter(visible).some(el => D.outOfStockText(text(el)));
@@ -164,11 +177,12 @@
     const quantityEvidence = /(?:数量|Quantity)\s*[:：]?\s*\d+\b/i.test(body);
     return {stage:currentStage, product, ...(!unobservedCart ? {cartItems:items} : {}), ...(currentStage === 'BAG' ? {bagEmpty} : {}), ...(explicitOutOfStock ? {stockAvailable:false} : {}), ...(!unobservedCart || observedQuantity !== null || quantityEvidence ? {quantity:observedQuantity} : {}),
       total:total(),currency: /(?:RMB|CNY|[¥￥])/.test(body) ? 'CNY' : null,
-      fulfillment: /(?:送货详情|送货地址|配送地址|邮寄到|送货到)/.test(body) && !/(?:取货详情|取货联系人)/.test(body) ? 'delivery' : null,
+      fulfillment: pickup && (pickup.pickupStoreNumber || pickup.pickupStoreName || /(?:取货详情|取货联系人|取货门店|取货地点)/.test(body)) ? 'pickup' : /(?:送货详情|送货地址|配送地址|邮寄到|送货到)/.test(body) && !/(?:取货详情|取货联系人)/.test(body) ? 'delivery' : null,
+      ...(pickup ? {checkoutStep:pickup.checkoutStep, pickupProgress:pickup.pickupProgress, pickupStoreNumber:pickup.pickupStoreNumber, pickupStoreName:pickup.pickupStoreName} : {}),
       paymentMethod: paymentMethod(),
       termsPresent: D.salesTermsPresent(body,termsLinks) && /(?:立即下单|下订单)/.test(body),
       ...(orderNumber ? {orderNumber,unpaid,receiptVerified:unpaid && items.length === 1 && !!product && total() !== null} : {}),
-      controls:controls(currentStage,items),issues};
+      controls:controls(currentStage,items,pickup),issues};
   }
   function assertCart(s) {
     if (s.cartItems.length !== 1 || s.cartItems[0].quantity !== 1 || !D.sameProduct(s.cartItems[0].product,binding.intent.product)) throw new Error('cart-mismatch');
@@ -176,7 +190,14 @@
   }
   function execute(command,s) {
     const kind = command?.kind;
+    if (binding.intent.entryMode === 'bag' && ['select-product','add-to-bag','edit-variant'].includes(kind)) throw new Error('bag-entry-readonly-product');
     if (!s.controls.some(c => c.kind === kind)) throw new Error('control-not-supported');
+    if (kind === 'pickup-step') {
+      if (binding.intent.fulfillment !== 'pickup' || !pickupAdapter || s.issues.length) throw new Error('pickup-not-ready');
+      if (Number.isFinite(s.total) && (s.total <= 0 || s.total > binding.intent.maxTotal)) throw new Error('price-mismatch');
+      if (s.cartItems !== undefined) assertCart(s);
+      pickupAdapter.step(binding.intent); return;
+    }
     if (kind === 'select-product') {
       const choice=selectionControl(binding.intent); if (!choice) throw new Error('selection-unavailable');
       if (command.field !== choice.field) throw new Error('selection-field-changed');
@@ -199,7 +220,7 @@
     }
     if (kind === 'submit-order') {
       const failures=D.validateFinal(snapshot(),binding.intent); if(failures.length)throw new Error(failures.join(','));
-      safeClick(exactControl(['立即下单'],['place-order','place-order-button'])); return;
+      safeClick(exactControl(['立即下单'],['place-order','place-order-button','continue-button-placeOrder'])); return;
     }
     throw new Error('unsupported-action');
   }

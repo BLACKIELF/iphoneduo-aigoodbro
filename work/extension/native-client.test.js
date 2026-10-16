@@ -14,16 +14,17 @@ async function setup(initial = {}) {
   const tabs = [];
   const access = [];
   const chrome = {
-    runtime: { id: "fixture-extension", getURL: path => "chrome-extension://fixture-extension/" + path, onInstalled: event(), onMessage: event(),
+    runtime: { id: "fixture-extension", getURL: path => "chrome-extension://fixture-extension/" + path, onInstalled: event(), onStartup: event(), onMessage: event(),
       sendNativeMessage: (host, request, callback) => {
         requests.push({ host, request: structuredClone(request) });
         Promise.resolve(mock.reply(request)).then(callback);
       }
     },
     action: { onClicked: event() },
+    alarms: { onAlarm: event(), get: async () => undefined, create: async () => {}, clear: async () => {} },
     storage: { local: {
       setAccessLevel: async value => { access.push(value); },
-      get: async keys => Object.fromEntries(keys.filter(key => key in store).map(key => [key, structuredClone(store[key])])),
+      get: async keys => Object.fromEntries((typeof keys === "string" ? [keys] : keys).filter(key => key in store).map(key => [key, structuredClone(store[key])])),
       set: async values => Object.assign(store, structuredClone(values))
     } },
     tabs: { query: async () => tabs, create: async value => { tabs.push(value); return value; }, update: async () => {} },

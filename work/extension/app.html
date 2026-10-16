@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>iPhoneduo助手aigoodbro · 1016v6</title>
+  <title>iPhoneduo助手aigoodbro · 1016v8</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
       <h1>iPhoneduo助手aigoodbro</h1>
       <p class="subtitle">选择门店与型号，有货时及时提醒</p>
     </div>
-    <div class="version">1016v6 · Chrome + Java</div>
+    <div class="version">1016v8 · Chrome + Java</div>
   </header>
 
   <main>
@@ -74,19 +74,24 @@
     </section>
 
     <section class="card checkout-card">
-      <div class="section-heading"><div><p class="step">04</p><h2>实验性 iPhone 自动购买 · 邮寄</h2></div><span id="checkout-status" class="status-badge idle">尚未启动</span></div>
-      <p class="settings-note">实站自动下单尚未验收，Apple Watch 暂不支持自动购买。程序检查购物袋、选择指定规格并辅助结账；使用官网已有的登录和收货信息，缺少信息时停止。运行时需要保持 Chrome 打开，首次测试请保持提交授权未勾选。</p>
+      <div class="section-heading"><div><p class="step">04</p><h2>实验性 iPhone 自动购买</h2></div><span id="checkout-status" class="status-badge idle">尚未启动</span></div>
+      <p class="settings-note">实站自动下单尚未验收，Apple Watch 暂不支持自动购买。程序支持邮寄或指定门店自提、最早可用时段，以及有货后结账一次。使用官网已有资料，缺少信息时停止。自动结账需要 Chrome 运行；建议先试跑到确认页。</p>
       <div class="field-grid" style="margin-top:16px">
         <label><span>购买型号</span><select id="checkout-model"></select></label>
         <label><span>购买容量</span><select id="checkout-capacity"></select></label>
         <label><span>购买颜色</span><select id="checkout-color"></select></label>
         <label><span>订单金额上限（元，含运费）</span><input id="checkout-budget" type="number" min="1" step="1" placeholder="请填写本次订单最高金额"></label>
+        <label><span>履约方式</span><select id="checkout-fulfillment"><option value="delivery">邮寄</option><option value="pickup">指定门店自提</option></select></label>
+        <label><span>购买入口</span><select id="checkout-entry"><option value="product">核对购物袋，缺少商品时自动选配</option><option value="bag">仅使用已准备的购物袋</option></select></label>
+        <label id="checkout-store-field" hidden><span>唯一自提门店 · 最早可用时段</span><select id="checkout-store"></select></label>
+        <label id="checkout-address-field" hidden><span>门店公开区县或地址（不是个人收货地址）</span><input id="checkout-address" type="text" maxlength="300" autocomplete="off" placeholder="用于精确匹配官网门店区域"></label>
       </div>
       <label class="check-line"><input id="checkout-submit" type="checkbox"><span>允许程序生成 1 件未付款订单；不执行支付</span></label>
       <label class="check-line"><input id="checkout-terms" type="checkbox"><span>已阅读并同意 <a href="https://www.apple.com.cn/shop/browse/open/salespolicies" target="_blank" rel="noopener">Apple 销售条款</a>，使用官网当前收货及发票信息</span></label>
       <label class="check-line"><input id="checkout-replace" type="checkbox"><span>允许更改购物袋内同款、同容量单件商品的颜色</span></label>
       <label class="check-line"><input id="checkout-new" type="checkbox"><span>已核对上次订单，本次明确创建一个新订单</span></label>
-      <div class="settings-actions"><button id="checkout-start" class="primary">启动自动购买</button><button id="checkout-resume" class="secondary">补全信息后继续</button><button id="checkout-stop" class="ghost">停止购买</button><button id="checkout-open" class="ghost">查看购买页面</button></div>
+      <div class="settings-actions"><button id="checkout-trial" class="primary">试跑至确认页</button><button id="checkout-start" class="secondary">按授权启动</button><button id="checkout-arm" class="secondary">有货后结账一次</button><button id="checkout-resume" class="secondary">补全信息后继续</button><button id="checkout-stop" class="ghost">停止购买</button><button id="checkout-open" class="ghost">查看购买页面</button></div>
+      <p class="settings-note">有货触发仅支持“指定门店自提＋已准备的购物袋”：先建立相同商品和门店的监控任务并开始监控，再启用一次结账。暂停监控或修改任务会取消等待；官网页单次查询不能触发购买。门店区县请按 Apple 官网公开信息填写。</p>
       <p id="checkout-message" class="form-message" role="status"></p><div id="checkout-log" class="logs"></div>
     </section>
 

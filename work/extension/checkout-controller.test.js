@@ -6,6 +6,10 @@ const product = { Code: 'MJTF4CH/A', Model: 'iPhone 18 Pro', Capacity: '512GB', 
 const intent = { product, areaCode: 'cn', fulfillment: 'delivery', quantity: 1, maxTotal: 11999, allowSubmit: true, acknowledgedTerms: true };
 const bag = { stage: 'BAG', product, cartItems: [{ product, quantity: 1 }], quantity: 1, controls: [{ kind: 'checkout' }] };
 const review = { ...bag, stage: 'REVIEW', total: 11999, currency: 'CNY', fulfillment: 'delivery', paymentMethod: 'alipay', controls: [{ kind: 'submit-order' }] };
+const pickup = { storeNumber: 'R683', storeName: 'Apple 上海环球港', region: { state: '上海市', city: '上海市', address: '普陀区中山北路 3300 号' } };
+const pickupIntent = { ...intent, fulfillment: 'pickup', pickup, entryMode: 'bag' };
+const inventoryIdentity = `cn:${pickup.storeNumber}:${product.Code}`;
+const inventorySnapshot = () => ({ monitoring: true, tasks: [{ id: 'radar-task', areaCode: 'cn', store: { StoreNumber: pickup.storeNumber }, product }], monitorState: { items: { 'radar-task': { available: true, identity: inventoryIdentity, checkedAt: Date.now() - 1 } } } });
 const clone = value => structuredClone(value);
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
@@ -28,7 +32,7 @@ function harness(t) {
       }
     } },
     tabs: {
-      create: async options => { const tab = { id: nextTab++, status: 'complete', ...options }; tabs.set(tab.id, tab); events.push({ kind: 'create', options }); return clone(tab); },
+      create: async options => { const tab = { id: nextTab++, status: 'complete', ...options }; tabs.set(tab.id, tab); events.push({ kind: 'create', options, persistedRun: clone(store.checkoutRun) }); await h.afterCreate?.(); return clone(tab); },
       get: async id => { if (!tabs.has(id)) throw new Error('tab removed'); return clone(tabs.get(id)); },
       update: async (id, options) => { if (!tabs.has(id)) throw new Error('tab removed'); Object.assign(tabs.get(id), options); events.push({ kind: 'update', options }); return clone(tabs.get(id)); },
       reload: async id => { if (!tabs.has(id)) throw new Error('tab removed'); events.push({ kind: 'reload', id }); },
@@ -52,6 +56,8 @@ function harness(t) {
   return Object.assign(h, {
     controller, api, listeners,
     start: overrides => controller.handle({ type: 'checkout-start', intent: clone(intent), ...overrides }),
+    arm: overrides => controller.handle({ type: 'checkout-arm', intent: clone(pickupIntent), taskId: 'radar-task', identity: inventoryIdentity, ...overrides }),
+    advanceTime: milliseconds => { now += milliseconds; },
     status: async () => (await controller.handle({ type: 'checkout-status' })).run,
     actions: () => events.filter(event => event.kind === 'message' && event.message.type === 'checkout:act'),
     async pulse(advanceMs = 1000) {
@@ -149,7 +155,7 @@ test('pending action is durably stored before dispatch and identical snapshots d
   assert.equal(action.persistedRun.pendingAction.kind, 'checkout');
   await h.pulse();
   assert.equal(h.actions().length, 1);
-  const stopped = await h.pulse(13000);
+  const stopped = await h.pulse(46000);
   assert.equal(stopped.state.status, 'BLOCKED');
   assert.equal(h.actions().length, 1);
 });
@@ -245,7 +251,7 @@ test('submission fence is persisted before act and repeated review never resubmi
   assert.equal(submits()[0].persistedRun.state.status, 'SUBMITTING');
   assert.equal(submits()[0].persistedRun.state.submitAttempt.attemptId, submits()[0].message.command.attemptId);
   await h.pulse();
-  const uncertain = await h.pulse(16000);
+  const uncertain = await h.pulse(46000);
   assert.equal(uncertain.state.status, 'SUBMISSION_UNKNOWN');
   assert.equal(submits().length, 1);
   const checked = await h.controller.handle({ type: 'checkout-resume' });
@@ -259,7 +265,7 @@ test('manual receipt recheck resolves a late verified receipt without checkout a
   await h.start();
   h.snapshot = clone(review);
   await h.pulse();
-  await h.pulse(16000);
+  await h.pulse(46000);
   assert.equal((await h.status()).state.status, 'SUBMISSION_UNKNOWN');
   const actionCount = h.actions().length;
   h.snapshot = { stage: 'ORDER_CREATED', product, orderNumber: 'W1234567890', unpaid: true, receiptVerified: true, controls: [{ kind: 'checkout' }] };
@@ -279,7 +285,7 @@ test('receipt recheck on an actionable product or bag never restarts purchases',
   await h.start({ allowReplaceVariant: true });
   h.snapshot = clone(review);
   await h.pulse();
-  await h.pulse(16000);
+  await h.pulse(46000);
   const actionCount = h.actions().length;
   const updateCount = h.events.filter(event => event.kind === 'update').length;
   for (const snapshot of [
@@ -367,7 +373,7 @@ test('unreachable content script stops after bounded retries without clicking', 
   const h = harness(t);
   await h.start();
   h.unreachable = true;
-  for (let i = 0; i < 13; i++) await h.pulse();
+  for (let i = 0; i < 47; i++) await h.pulse();
   assert.equal((await h.status()).state.status, 'BLOCKED');
   assert.equal(h.actions().length, 0);
 });
@@ -393,4 +399,152 @@ test('page notifications require extension, top frame, tab, nonce and current ru
   for (const changed of [{ id: 'other' }, { frameId: 1 }, { url: 'https://evil.test/shop/bag' }, { tab: { id: run.tabId + 1 } }]) assert.equal(await h.controller.pageChanged(message, { ...sender, ...changed }), false);
   assert.equal(await h.controller.pageChanged({ ...message, nonce: 'wrong' }, sender), false);
   assert.equal(await h.controller.pageChanged({ ...message, runId: 'old-task' }, sender), false);
+});
+
+test('bag mode stops at an empty bag or product page and never edits another colour', async t => {
+  const h = harness(t);
+  for (const snapshot of [
+    { stage: 'BAG', bagEmpty: true, cartItems: [], controls: [] },
+    { stage: 'PRODUCT', stockAvailable: false, controls: [{ kind: 'select-product', field: 'color' }] },
+    { ...clone(bag), cartItems: [{ product: { ...product, Color: '银色' }, quantity: 1 }], controls: [{ kind: 'edit-variant' }] }
+  ]) {
+    await h.start({ intent: clone(pickupIntent), allowReplaceVariant: true });
+    h.snapshot = snapshot;
+    assert.equal((await h.pulse()).state.status, 'BLOCKED');
+  }
+  assert.equal(h.actions().length, 0);
+  assert.equal(h.events.filter(event => event.kind === 'update' || event.kind === 'reload').length, 0);
+});
+
+test('pickup steps follow visible progress, not price changes, with a 45 second wait', async t => {
+  const h = harness(t);
+  await h.start({ intent: clone(pickupIntent) });
+  h.snapshot = { stage: 'CHECKOUT', checkoutStep: 'fulfillment', pickupProgress: 'open-region', controls: [{ kind: 'pickup-step' }] };
+  await h.pulse();
+  assert.deepEqual(h.actions()[0].message.command, { kind: 'pickup-step' });
+  h.snapshot.total = 11999;
+  assert.equal((await h.pulse(30000)).state.status, 'CHECKING_OUT');
+  assert.equal(h.actions().length, 1);
+  h.snapshot.pickupProgress = 'choose-state';
+  await h.pulse();
+  assert.equal(h.actions().length, 2);
+  h.snapshot.checkoutStep = 'pickup-contact';
+  await h.pulse();
+  assert.equal(h.actions().length, 3);
+  assert.equal((await h.pulse(46000)).state.status, 'BLOCKED');
+  assert.equal(h.actions().length, 3);
+});
+
+test('explicit review mode stops despite allowSubmit and terms being true', async t => {
+  const h = harness(t);
+  await h.start({ intent: { ...clone(intent), runMode: 'review' } });
+  h.snapshot = clone(review);
+  const run = await h.pulse();
+  assert.equal(run.state.status, 'READY_TO_SUBMIT');
+  assert.equal(run.state.intent.allowSubmit, false);
+  assert.equal(h.actions().length, 0);
+});
+
+test('arming only permits pickup bag mode and does not create or query a tab', async t => {
+  const h = harness(t);
+  assert.equal((await h.arm({ intent: clone(intent) })).ok, false);
+  assert.equal((await h.arm({ intent: { ...clone(pickupIntent), entryMode: 'product' } })).ok, false);
+  assert.equal((await h.arm({ identity: 'cn:R999:OTHERCH/A' })).ok, false);
+  const armed = await h.arm();
+  assert.equal(armed.ok, true);
+  assert.equal(armed.run.state.status, 'WAITING_FOR_STOCK');
+  assert.equal(armed.run.tabId, null);
+  assert.equal((await h.controller.handle({ type: 'checkout-resume' })).run.state.status, 'WAITING_FOR_STOCK');
+  assert.equal((await h.pulse()).state.status, 'WAITING_FOR_STOCK');
+  assert.equal(h.tabs.size, 0);
+  assert.equal(h.events.filter(event => event.kind === 'message').length, 0);
+});
+
+test('stale, future, unknown, mismatched or pre-arm stock never triggers', async t => {
+  const h = harness(t);
+  const { run } = await h.arm();
+  h.advanceTime(70000);
+  for (const change of [
+    { available: false }, { available: undefined }, { available: 'true' }, { identity: 'cn:R999:OTHERCH/A' },
+    { checkedAt: run.trigger.armedAt }, { checkedAt: Date.now() + 1 }, { checkedAt: Date.now() - 60001 }, { checkedAt: 'invalid' }
+  ]) {
+    const snapshot = inventorySnapshot(); Object.assign(snapshot.monitorState.items['radar-task'], change);
+    assert.equal((await h.controller.inventory(snapshot)).triggered, false);
+  }
+  assert.equal(h.tabs.size, 0);
+  assert.equal((await h.status()).trigger.status, 'armed');
+});
+
+test('a fresh exact stock result consumes once before tab creation and survives restart', async t => {
+  const h = harness(t);
+  await h.arm(); h.advanceTime(1000);
+  const snapshot = inventorySnapshot();
+  snapshot.monitorState.items['radar-task'].checkedAt = new Date(Date.now() - 1).toISOString();
+  const results = await Promise.all([h.controller.inventory(snapshot), h.controller.inventory(snapshot)]);
+  assert.deepEqual(results.map(result => result.triggered), [true, false]);
+  const creates = h.events.filter(event => event.kind === 'create');
+  assert.equal(creates.length, 1);
+  assert.equal(creates[0].persistedRun.trigger.status, 'consumed');
+  assert.equal(creates[0].persistedRun.state.status, 'READY');
+  assert.equal(creates[0].persistedRun.tabId, null);
+  assert.equal(creates[0].options.url, 'https://www.apple.com.cn/shop/bag');
+  const restarted = createCheckoutController(h.api);
+  assert.equal((await restarted.inventory(snapshot)).triggered, false);
+  assert.equal(h.events.filter(event => event.kind === 'create').length, 1);
+});
+
+test('paused monitoring, removed tasks and changed identities cancel the armed checkout', async t => {
+  const h = harness(t);
+  for (const change of [
+    snapshot => { snapshot.monitoring = false; },
+    snapshot => { snapshot.tasks = []; },
+    snapshot => { snapshot.tasks[0].store.StoreNumber = 'R999'; }
+  ]) {
+    await h.arm(); h.advanceTime(1000);
+    const snapshot = inventorySnapshot(); change(snapshot);
+    const result = await h.controller.inventory(snapshot);
+    assert.equal(result.cancelled, true);
+    assert.equal(result.run.state.status, 'CANCELLED');
+    assert.equal(result.triggered, false);
+  }
+  assert.equal(h.tabs.size, 0);
+});
+
+test('cancelArmed during consumption persistence prevents opening a checkout tab', async t => {
+  const h = harness(t), entered = deferred(), release = deferred();
+  await h.arm(); h.advanceTime(1000);
+  h.afterSave = async value => {
+    if (value.checkoutRun.trigger?.status === 'consumed') { h.afterSave = null; entered.resolve(); await release.promise; }
+  };
+  const triggered = h.controller.inventory(inventorySnapshot());
+  await entered.promise;
+  const cancelled = h.controller.cancelArmed('监控任务已更改');
+  release.resolve(); await Promise.all([triggered, cancelled]);
+  assert.equal(h.tabs.size, 0);
+  assert.equal((await h.status()).state.status, 'CANCELLED');
+  assert.equal((await h.status()).trigger.status, 'cancelled');
+});
+
+test('stop invalidates armed triggers and trigger persistence failure cannot open a tab', async t => {
+  const h = harness(t);
+  await h.arm(); h.advanceTime(1000);
+  await h.controller.handle({ type: 'checkout-stop' });
+  assert.equal((await h.controller.inventory(inventorySnapshot())).triggered, false);
+  await h.arm(); h.advanceTime(1000);
+  h.rejectSave = value => value.checkoutRun.trigger?.status === 'consumed';
+  await assert.rejects(h.controller.inventory(inventorySnapshot()), /storage unavailable/);
+  assert.equal(h.tabs.size, 0);
+});
+
+test('cancelling while a triggered tab is being created leaves it unable to act', async t => {
+  const h = harness(t), entered = deferred(), release = deferred();
+  await h.arm(); h.advanceTime(1000);
+  h.afterCreate = async () => { entered.resolve(); await release.promise; };
+  const triggered = h.controller.inventory(inventorySnapshot());
+  await entered.promise;
+  const cancelled = h.controller.cancelArmed('监控已暂停');
+  release.resolve(); await Promise.all([triggered, cancelled]);
+  assert.equal((await h.status()).state.status, 'CANCELLED');
+  await h.pulse();
+  assert.equal(h.actions().length, 0);
 });
