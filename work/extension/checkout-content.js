@@ -83,9 +83,9 @@
     const challenge = all('input[autocomplete="one-time-code"],iframe[src*="captcha"],iframe[title*="验证码"],iframe[title*="验证"]');
     if (challenge.some(visible) || all('h1,h2,[role="dialog"]').filter(visible).some(el => /^(?:验证你的身份|验证您的身份|双重认证|输入验证码|安全验证)/.test(text(el)))) return 'IDENTITY_CHALLENGE';
     if (/(?:订单号|订单编号)\s*[:：]?\s*W\d{8,}/i.test(body)) return 'ORDER_CREATED';
+    if (/\/(?:payment|payments)(?:\/|$)/.test(path) || /(?:扫码支付|打开支付宝完成付款|请在\s*\d+\s*分钟内完成支付)/.test(body)) return 'PAYMENT';
     const step = new URL(location.href).searchParams.get('_s') || '';
     if ((all('h1,h2').filter(visible).some(el => D.reviewHeading(text(el))) || /^Review(?:$|[-_])/i.test(step)) && exactControl(['立即下单'], ['place-order','place-order-button','continue-button-placeOrder'])) return 'REVIEW';
-    if (/\/(?:payment|payments)(?:\/|$)/.test(path) || /(?:扫码支付|打开支付宝完成付款|请在\s*\d+\s*分钟内完成支付)/.test(body)) return 'PAYMENT';
     if (/\/shop\/bag(?:\/|$)/.test(path)) return 'BAG';
     if (/\/shop\/(?:checkout|signin)(?:\/|$)/.test(path)) return 'CHECKOUT';
     if (/\/shop\/buy-iphone\//.test(path)) return 'PRODUCT';
@@ -110,10 +110,14 @@
       if (!paymentControl && !paymentLabel) return null;
       // Only an explicit selected payment radio proves Alipay. Text, logos,
       // unselected alternatives and ambiguous/mixed labels are not evidence.
-      const explicitAlipay = /^(?:支付宝|alipay)$/i.test(value) || (el.getAttribute('data-autom')?.startsWith('checkout-billingOptions-') && el.value === 'ALIPAY' && !/分期|installment|微信|wechat|信用卡|礼品卡|余额/i.test(value));
+      const autom = el.getAttribute('data-autom') || '';
+      const billingOption = autom.startsWith('checkout-billingOptions-');
+      const conflictingIdentity = /WECHAT|INSTALLMENT|CREDIT|DEBIT|PAYPAL|APPLE.?PAY|UNIONPAY/i.test(String(el.value || '') + ' ' + autom);
+      const exactLabel = /^(?:支付宝|alipay)$/i.test(value);
+      const explicitAlipay = !conflictingIdentity && (billingOption ? el.value === 'ALIPAY' && (!value || exactLabel) : exactLabel);
       return (el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && explicitAlipay ? 'alipay' : 'unknown';
     }).filter(Boolean);
-    return evidence.length > 0 && evidence.every(value => value === 'alipay') ? 'alipay' : null;
+    return evidence.length === 1 && evidence[0] === 'alipay' ? 'alipay' : null;
   }
   function selectionControl(intent) {
     if (!intent) return null;

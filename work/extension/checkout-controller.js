@@ -145,7 +145,8 @@ export function createCheckoutController(api) {
     }
     if (HALTED.has(run.state.status)) return;
     if (run.state.status === 'SUBMITTING') {
-      if (run.pendingAction && Date.now() - run.pendingAction.at > PAGE_SETTLE_MS) {
+      const submittedAt = run.state.submitAttempt?.startedAt ?? run.pendingAction?.at;
+      if (!Number.isFinite(submittedAt) || submittedAt > Date.now() || Date.now() - submittedAt > PAGE_SETTLE_MS) {
         run.state = recoverCheckout(run.state, Date.now()); log(run, '未读取到订单结果，请到官网核对；不会重复提交。'); await save(run);
       } else wake(800);
       return;
@@ -198,7 +199,10 @@ export function createCheckoutController(api) {
         await api.alarms?.create('checkout-pulse', { periodInMinutes: 0.5 }); wake(700);
         return { ok: true, run };
       }
-      if (!run) return { ok: false, error: '尚未创建购买任务。' };
+      if (!run) {
+        if (message.type === 'checkout-stop') { stopPending = false; return { ok: true, run: null }; }
+        return { ok: false, error: '尚未创建购买任务。' };
+      }
       if (message.type === 'checkout-stop') {
         run.state = advanceCheckout(run.state, { type: 'CANCEL' }, Date.now()).state;
         log(run, '已请求停止；已提交的订单不会自动撤销。'); await save(run); stopPending = false; return { ok: true, run };
@@ -208,12 +212,15 @@ export function createCheckoutController(api) {
         return { ok: true, run };
       }
       if (message.type === 'checkout-resume') {
+        if (stopPending) return { ok: false, error: '正在停止当前任务，请稍候。', run };
+        const resumeEpoch = cancellationEpoch;
         if (run.trigger?.status === 'armed') return { ok: true, run };
         if (run.state.submitAttempt || ['SUBMISSION_UNKNOWN', 'ORDER_CREATED_UNPAID', 'PAYMENT_STOPPED', 'SUBMITTING'].includes(run.state.status))
           { await pulse({ receiptOnly: true }); return { ok: true, run: await read() }; }
         const uncertainBag = run.pendingAction?.kind === 'add-to-bag';
         run.state.status = 'RUNNING'; run.pendingAction = null; run.noActionSince = null; run.connectionFailures = 0; run.connectionFailureSince = null;
         log(run, '继续当前任务，重新核对页面。'); await save(run);
+        if (stopPending || resumeEpoch !== cancellationEpoch) return { ok: false, error: '继续操作已被停止请求取消。', run };
         if (uncertainBag) await api.tabs.update(run.tabId, { url: 'https://www.apple.com.cn/shop/bag' });
         wake(); return { ok: true, run };
       }
@@ -256,16 +263,27 @@ export function createCheckoutController(api) {
       run.state.status = 'READY'; run.state.reason = '新库存已确认，准备核对购物袋'; run.state.updatedAt = now;
       log(run, '库存触发已消费，打开购物袋核对一次。'); await save(run);
       if (cancelled()) return { ok: true, triggered: false, run };
+      const expired = () => checkedAt > Date.now() || Date.now() - checkedAt > 60000;
+      const stopExpired = async () => {
+        await block(run, '等待期间库存证据已过期，已停止；请重新确认监控库存后再等待触发。');
+        return { ok: false, triggered: run.tabId != null, run, error: run.state.reason };
+      };
+      const stopTriggered = async () => {
+        run.trigger.status = 'cancelled';
+        run.state = advanceCheckout(run.state, { type: 'CANCEL' }, Date.now()).state;
+        log(run, '打开购买页时收到取消请求；已停止，不执行结账。'); await save(run);
+        return { ok: true, triggered: true, cancelled: true, run };
+      };
+      if (expired()) return stopExpired();
       try {
         const tab = await api.tabs.create({ url: 'https://www.apple.com.cn/shop/bag', active: true });
         run.tabId = tab.id; await save(run);
-        if (cancelled()) {
-          run.trigger.status = 'cancelled';
-          run.state = advanceCheckout(run.state, { type: 'CANCEL' }, Date.now()).state;
-          log(run, '打开购买页时收到取消请求；已停止，不执行结账。'); await save(run);
-          return { ok: true, triggered: true, cancelled: true, run };
-        }
-        await api.alarms?.create('checkout-pulse', { periodInMinutes: 0.5 }); wake(700);
+        if (cancelled()) return stopTriggered();
+        if (expired()) return stopExpired();
+        await api.alarms?.create('checkout-pulse', { periodInMinutes: 0.5 });
+        if (cancelled()) return stopTriggered();
+        if (expired()) return stopExpired();
+        wake(700);
         return { ok: true, triggered: true, run };
       } catch {
         await block(run, '库存触发已消费，但购买标签页未能确认打开；不会自动再次打开。');

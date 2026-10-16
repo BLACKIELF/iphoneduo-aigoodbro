@@ -17,7 +17,7 @@ function fixture(step='Fulfillment') {
   const store=(number='R617',checked=true)=>add('input[name="store-locator-result"]',node('',{}, {value:number,checked}));
   const slot=(values=['09:00-09:30'],value='')=>add('select[data-autom="pickup-availablewindow-dropdown"]',node('',{}, {options:values.map(v=>typeof v==='string'?{value:v,disabled:false}:v),value}));
   const stable=()=>{adapter.observe(intent);clock+=1300;return adapter.observe(intent);};
-  return {adapter,add,node,button,store,slot,stable,body,location,actions,query,tick:()=>{clock+=1300;}};
+  return {adapter,add,node,button,store,slot,stable,body,location,actions,query,tick:(ms=1300)=>{clock+=ms;}};
 }
 test('pickup mode is selected once even if the DOM does not acknowledge the click',()=>{
  const f=fixture(); f.add('button',f.node('我要取货',{'aria-checked':'false'}));
@@ -48,10 +48,10 @@ test('earliest enabled date and first enabled nonempty slot are chosen after sta
  f.stable();assert.equal(f.adapter.step(intent),'continue-fulfillment');assert.equal(f.adapter.observe(intent).canAct,false);assert.equal(f.actions.length,3);
 });
 test('missing or empty pickup windows stop rather than continuing',()=>{
- for(const missing of [true,false]){const f=fixture();f.store();if(!missing)f.slot([]);f.button('fulfillment-continue-button');const s=f.stable();assert.match(s.issues[0],/没有可验证的取货时段/);assert.equal(s.canAct,false);assert.equal(f.actions.length,0);}
+ for(const missing of [true,false]){const f=fixture();f.store();if(!missing)f.slot([]);f.button('fulfillment-continue-button');f.stable();f.tick(12000);const s=f.adapter.observe(intent);assert.match(s.issues[0],/没有可验证的取货时段/);assert.equal(s.canAct,false);assert.equal(f.actions.length,0);}
 });
 test('unavailable first date advances once to next available date',()=>{
- const f=fixture();f.store();f.slot([]);const first=f.node('',{}, {value:'2026-10-17',checked:true});const next=f.node('',{}, {value:'2026-10-18'});f.add('input[name="bartPickupDateSelectorButtonGroup"]',first,next);f.stable();assert.equal(f.adapter.step(intent),'select-date');assert.equal(f.actions[0].el,next);assert.equal(f.actions.length,1);
+ const f=fixture();f.store();f.slot([]);const first=f.node('',{}, {value:'2026-10-17',checked:true});const next=f.node('',{}, {value:'2026-10-18'});f.add('input[name="bartPickupDateSelectorButtonGroup"]',first,next);f.stable();f.tick(12000);assert.equal(f.adapter.step(intent),'select-date');assert.equal(f.actions[0].el,next);assert.equal(f.actions.length,1);
 });
 test('contact values never leave adapter and incomplete contact or identity fields stop',()=>{
  const f=fixture('PickupContact');const secret='sensitive-fixture-value';
@@ -86,4 +86,64 @@ test('Review always reconciles explicit summary with checked store and target',(
  const f=fixture('Review');f.store('R617');f.body.innerText='取货门店：Apple 武汉';assert.match(f.adapter.observe(intent).issues[0],/不一致/);assert.equal(f.actions.length,0);
  f.body.innerText='取货门店：Apple 长沙';assert.deepEqual(f.adapter.observe(intent).issues,[]);
  f.store('R999');assert.match(f.adapter.observe(intent).issues[0],/冲突/);assert.equal(f.actions.length,0);
+});
+
+test('delayed windows stay pending rather than exhausting a date after 1.2 seconds',()=>{
+ const f=fixture();f.store();f.slot([]);f.button('fulfillment-continue-button');
+ const pending=f.stable();assert.deepEqual(pending.issues,[]);assert.equal(pending.canAct,false);
+ f.slot(['09:00'],'');f.stable();assert.equal(f.adapter.step(intent),'select-slot');assert.equal(f.actions.length,1);
+});
+test('date list with disabled selected date must not continue on a stale enabled window',()=>{
+ const f=fixture();f.store();f.slot(['09:00'],'09:00');f.button('fulfillment-continue-button');
+ f.add('input[name="bartPickupDateSelectorButtonGroup"]',f.node('',{}, {value:'2026-10-17',checked:true,disabled:true}));
+ const result=f.stable();assert.equal(result.canAct,false);assert(result.issues.length);assert.equal(f.actions.length,0);
+});
+test('multiple selected dates or duplicate slot values never authorize continuation',()=>{
+ const f=fixture();f.store();f.slot(['09:00'],'09:00');f.button('fulfillment-continue-button');
+ f.add('input[name="bartPickupDateSelectorButtonGroup"]',f.node('',{}, {value:'2026-10-17',checked:true}),f.node('',{}, {value:'2026-10-18',checked:true}));
+ assert(f.stable().issues.length);assert.equal(f.actions.length,0);
+ const g=fixture();g.store();g.slot(['09:00','09:00'],'09:00');g.button('fulfillment-continue-button');assert(g.stable().issues.length);assert.equal(g.actions.length,0);
+});
+test('a required unchecked consent checkbox is not complete just because its value is on',()=>{
+ const f=fixture('PickupContact');for(const field of ['lastName','firstName','emailAddress','fullDaytimePhone'])f.add(`input[data-autom="form-field-${field}"]`,f.node('',{}, {value:'already-filled'}));
+ f.add('input[required]',f.node('',{type:'checkbox'}, {value:'on',checked:false}));f.button('continue-button-label');
+ assert.equal(f.adapter.observe(intent).canAct,false);assert(f.adapter.observe(intent).issues.length);assert.equal(f.actions.length,0);
+});
+test('native invalid contact validity blocks without exposing its value',()=>{
+ const f=fixture('PickupContact');for(const field of ['lastName','firstName','emailAddress','fullDaytimePhone'])f.add(`input[data-autom="form-field-${field}"]`,f.node('',{}, {value:'invalid-contact-value',validity:{valid:field!=='emailAddress'}}));
+ f.button('continue-button-label');assert.equal(f.adapter.observe(intent).canAct,false);assert(!JSON.stringify(f.adapter.observe(intent)).includes('invalid-contact-value'));
+});
+test('required radio, textarea and disabled selected option are checked semantically',()=>{
+ const contact=()=>{const f=fixture('PickupContact');for(const field of ['lastName','firstName','emailAddress','fullDaytimePhone'])f.add(`input[data-autom="form-field-${field}"]`,f.node('',{}, {value:'already-filled'}));f.button('continue-button-label');return f;};
+ for(const [selector,node] of [['input[required]',{attrs:{type:'radio'},value:'self',checked:false}],['textarea[required]',{value:''}],['select[required]',{value:'placeholder',selectedOptions:[{disabled:true}]}]]){const f=contact();f.add(selector,f.node('',node.attrs||{},node));assert.equal(f.adapter.observe(intent).canAct,false);assert.equal(f.actions.length,0);}
+});
+test('Review reconciles multiline headings and allows repeated identical public store evidence',()=>{
+ const f=fixture('Review');f.store();f.body.innerText='取货门店：\nApple 武汉';assert(f.adapter.observe(intent).issues.length);
+ f.body.innerText='取货门店：Apple 长沙\n取货地点：Apple 长沙';assert.deepEqual(f.adapter.observe(intent).issues,[]);
+ f.body.innerText='取货门店\nApple 武汉';assert(f.adapter.observe(intent).issues.length);
+ f.body.innerText='取货门店：Apple 长沙\n取货地点：Apple 武汉';assert(f.adapter.observe(intent).issues.length);
+});
+test('Review rejects conflicting visible titles on its selected store radio',()=>{
+ const f=fixture('Review');const selected=f.store();const titles=[f.node('Apple 长沙'),f.node('Apple 武汉')];selected.labels=[f.node('',{}, {querySelectorAll:()=>titles})];
+ assert(f.adapter.observe(intent).issues.length);assert.equal(f.actions.length,0);
+});
+
+test('a delayed first date retains priority when its windows arrive within the loading deadline',()=>{
+ const f=fixture();f.store();f.slot([]);const first=f.node('',{}, {value:'2026-10-17',checked:true}),next=f.node('',{}, {value:'2026-10-18'});f.add('input[name="bartPickupDateSelectorButtonGroup"]',first,next);f.button('fulfillment-continue-button');
+ assert.equal(f.stable().canAct,false);f.tick(7000);assert.equal(f.adapter.observe(intent).canAct,false);f.slot(['09:00']);f.stable();assert.equal(f.adapter.step(intent),'select-slot');assert.equal(f.actions.length,1);assert.equal(f.actions[0].kind,'select');
+});
+test('unavailable selected window must be replaced before any continuation, including disabled optgroups',()=>{
+ for(const unavailable of [{value:'09:00',disabled:true},{value:'09:00',disabled:false,closest:()=>({disabled:true})}]){const f=fixture();f.store();f.slot([unavailable,{value:'10:00',disabled:false}],'09:00');f.button('fulfillment-continue-button');f.stable();assert.equal(f.adapter.step(intent),'select-slot');assert.deepEqual(f.actions,[{kind:'select',value:'10:00'}]);f.stable();assert.equal(f.adapter.step(intent),'continue-fulfillment');assert.equal(f.actions.length,2);}
+});
+test('required checked controls and a fulfilled radio group can continue without exposing values',()=>{
+ const f=fixture('PickupContact');for(const field of ['lastName','firstName','emailAddress','fullDaytimePhone'])f.add(`input[data-autom="form-field-${field}"]`,f.node('',{}, {value:'private-form-value',validity:{valid:true}}));
+ const checkbox=f.node('',{type:'checkbox'},{checked:true,value:''}),self=f.node('',{type:'radio',name:'recipient'},{checked:true,value:'self'}),other=f.node('',{type:'radio',name:'recipient'},{checked:false,value:'other'});
+ f.add('input[required]',checkbox,other);f.add('input[type="radio"]',self,other);f.button('continue-button-label');const result=f.adapter.observe(intent);assert.equal(result.canAct,true);assert(!JSON.stringify(result).includes('private-form-value'));assert.equal(f.adapter.step(intent),'continue-contact');assert.equal(f.actions.length,1);
+});
+test('a required visually hidden checkbox with visible label still requires explicit checked state',()=>{
+ const f=fixture('PickupContact');for(const field of ['lastName','firstName','emailAddress','fullDaytimePhone'])f.add(`input[data-autom="form-field-${field}"]`,f.node('',{}, {value:'already-filled'}));
+ const hidden=f.node('',{type:'checkbox'},{hidden:true,value:'on',checked:false,labels:[f.node('必须确认')]});f.add('input[required]',hidden);f.button('continue-button-label');assert.equal(f.adapter.observe(intent).canAct,false);assert.equal(f.actions.length,0);
+});
+test('Billing does not continue when ALIPAY value contradicts its visible label',()=>{
+ const f=fixture('Billing');const radio=f.node('',{type:'radio','aria-label':'银行卡'},{value:'ALIPAY',checked:true});f.add('input[data-autom^="checkout-billingOptions-"]',radio);f.button('continue-button-review');assert.equal(f.adapter.observe(intent).canAct,false);assert(f.adapter.observe(intent).issues.length);assert.equal(f.actions.length,0);
 });

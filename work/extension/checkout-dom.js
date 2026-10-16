@@ -38,7 +38,7 @@
     const expected = intent.pickup;
     if (!expected || !/^R\d{1,8}$/.test(expected.storeNumber || '') || !norm(expected.storeName)) return false;
     if (snapshot.pickupStoreNumber) return snapshot.pickupStoreNumber === expected.storeNumber;
-    return !!norm(snapshot.pickupStoreName) && compact(snapshot.pickupStoreName) === compact(expected.storeName);
+    return !!norm(snapshot.pickupStoreName) && norm(snapshot.pickupStoreName).normalize('NFKC').toLowerCase() === norm(expected.storeName).normalize('NFKC').toLowerCase();
   }
   function validateIntent(intent) {
     return !!intent && !!parseProduct(`${intent.product?.Model} ${intent.product?.Capacity} ${intent.product?.Color}`) && intent.quantity === 1 && Number.isFinite(intent.maxTotal) && intent.maxTotal > 0 && typeof intent.allowSubmit === 'boolean' && typeof intent.acknowledgedTerms === 'boolean' && [undefined, 'delivery', 'pickup'].includes(intent.fulfillment) && (intent.fulfillment !== 'pickup' || (!!intent.pickup && /^R\d{1,8}$/.test(intent.pickup.storeNumber || '') && !!norm(intent.pickup.storeName) && intent.pickup.slotPolicy === 'earliest'));

@@ -11,6 +11,8 @@ const inventoryPageClient = createInventoryPageClient(chrome);
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 let requestQueue = Promise.resolve();
 let inventoryGeneration = 0;
+let checkoutGeneration = 0, armGeneration = 0;
+let stockAlarmQueue = Promise.resolve();
 const STOCK_ALARM = "checkout-stock-status";
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -34,6 +36,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleMessage(message) {
+  if (message?.type === 'checkout-stop') checkoutGeneration++;
+  if (["stop-monitor", "start-monitor", "save-tasks"].includes(message?.type)) armGeneration++;
+  const checkoutEpoch = checkoutGeneration, armEpoch = armGeneration;
   if (["stop-monitor", "start-monitor", "save-tasks", "checkout-start", "checkout-arm"].includes(message?.type)) inventoryGeneration++;
   if (["stop-monitor", "start-monitor", "save-tasks"].includes(message?.type)) {
     // Raise the controller cancellation fence before waiting for storage or native responses.
@@ -63,6 +68,10 @@ async function handleMessage(message) {
         return result;
       }
       await storageReady;
+      if (['checkout-start', 'checkout-arm', 'checkout-resume'].includes(message.type) &&
+          (checkoutEpoch !== checkoutGeneration || (message.type === 'checkout-arm' && armEpoch !== armGeneration))) {
+        return { ok: false, error: '购买操作已被停止或任务变更取消。' };
+      }
       const result = await checkoutController.handle(message);
       await syncStockAlarm();
       return result;
@@ -196,12 +205,18 @@ async function openDashboard() {
 }
 
 // Poll only the local Java status. This alarm never makes an additional Apple request.
-async function syncStockAlarm() {
-  await storageReady;
-  const { checkoutRun } = await chrome.storage.local.get("checkoutRun");
-  if (checkoutRun?.trigger?.status === "armed" && checkoutRun.state?.status === "WAITING_FOR_STOCK") {
-    if (!await chrome.alarms.get(STOCK_ALARM)) await chrome.alarms.create(STOCK_ALARM, { periodInMinutes: 0.5 });
-  } else await chrome.alarms.clear(STOCK_ALARM);
+function syncStockAlarm() {
+  // Serialize the read as well as its effect: an old startup snapshot must not
+  // clear a newly armed task's alarm or recreate one after cancellation.
+  const pending = stockAlarmQueue.then(async () => {
+    await storageReady;
+    const { checkoutRun } = await chrome.storage.local.get("checkoutRun");
+    if (checkoutRun?.trigger?.status === "armed" && checkoutRun.state?.status === "WAITING_FOR_STOCK") {
+      if (!await chrome.alarms.get(STOCK_ALARM)) await chrome.alarms.create(STOCK_ALARM, { periodInMinutes: 0.5 });
+    } else await chrome.alarms.clear(STOCK_ALARM);
+  });
+  stockAlarmQueue = pending.catch(() => {});
+  return pending;
 }
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name !== STOCK_ALARM) return;

@@ -7,6 +7,8 @@
   'use strict';
   const norm = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   const canonical = value => norm(value).replace(/\s/g, '');
+  const storeName = value => norm(value).normalize('NFKC').toLowerCase();
+  const SLOT_LOAD_TIMEOUT_MS = 12000;
   const regionName = value => canonical(value).replace(/(省|市)$/, '');
   const credit = /礼品卡|余额|gift\s*card|(?:account\s*)?balance|store\s*credit|混合(?:付款|支付)|组合(?:付款|支付)|\b(?:split|mixed)[\s-]*(?:payment|tender)\b/i;
   function create({ document, location, getComputedStyle, click, setSelect, now = Date.now }) {
@@ -20,6 +22,18 @@
     const target = el => available(el) ? el : [...(el.labels || [])].filter(available).length === 1 ? [...el.labels].find(available) : null;
     const chosen = el => el?.checked === true || el?.getAttribute('aria-checked') === 'true' || el?.getAttribute('aria-pressed') === 'true';
     const button = autom => all(`button[data-autom="${autom}"]`).filter(available);
+    const optionAvailable = option => !option.disabled && option.getAttribute?.('aria-disabled') !== 'true' && !option.closest?.('optgroup[disabled]');
+    function fieldComplete(el) {
+      if (el.getAttribute('aria-invalid') === 'true' || el.validity?.valid === false) return false;
+      const type = String(el.type || el.getAttribute('type') || '').toLowerCase();
+      if (type === 'checkbox') return el.checked === true;
+      if (type === 'radio') {
+        const name = el.getAttribute('name');
+        return name ? all('input[type="radio"]').some(other => other.getAttribute('name') === name && usableRadio(other) && other.checked === true) : el.checked === true;
+      }
+      if (el.selectedOptions && [...el.selectedOptions].some(option => !optionAvailable(option))) return false;
+      return !!norm(el.value);
+    }
     const phase = () => /^(Fulfillment|PickupContact|Billing|Review)(?:$|[-_])/i.exec(new URL(location.href).searchParams.get('_s') || '')?.[1].toLowerCase() || '';
     function inspect(intent) {
       const key = JSON.stringify([intent?.intentId, intent?.revision, intent?.pickup]);
@@ -44,17 +58,29 @@
       if (selected.length === 1) {
         state.pickupStoreNumber = selected[0].value;
         const titles = [...(selected[0].labels || [])].flatMap(label => all('.form-selector-title', label)).filter(visible);
-        state.pickupStoreName = titles.length === 1 ? text(titles[0]) : (state.pickupStoreNumber === p.storeNumber ? p.storeName : '');
+        const titleNames = [...new Set(titles.map(title => storeName(text(title))).filter(Boolean))];
+        if (titleNames.length > 1) return fail('选中门店包含冲突名称，请在官网确认');
+        state.pickupStoreName = titleNames.length === 1 ? text(titles[0]) : (state.pickupStoreNumber === p.storeNumber ? p.storeName : '');
       }
       // Summary evidence must be explicit and current. Never substitute a previous
       // page's selection when the Review page omits its pickup store.
       if (step === 'review') {
-        const lines = String(document.body?.innerText || document.body?.textContent || '').split(/[\r\n]+/).map(norm);
-        const labels = lines.map(line => /^(?:取货门店|取货地点)\s*[:：]\s*(.+)$/.exec(line)?.[1]).filter(Boolean);
-        if (labels.length > 1 || (labels.length === 1 && canonical(labels[0]) !== canonical(p.storeName))) return fail('确认页取货门店与目标不一致或不唯一');
-        if (selected.length === 1 && (state.pickupStoreNumber !== p.storeNumber || (state.pickupStoreName && canonical(state.pickupStoreName) !== canonical(p.storeName)))) return fail('确认页选中门店、门店名称与目标冲突');
-        if (labels.length === 1) {
-          if (state.pickupStoreName && canonical(state.pickupStoreName) !== canonical(labels[0])) return fail('确认页门店摘要与选中门店冲突');
+        const lines = String(document.body?.innerText || document.body?.textContent || '').split(/[\r\n]+/).map(norm).filter(Boolean);
+        const labels = [];
+        for (let index = 0; index < lines.length; index++) {
+          const match = /^(?:取货门店|取货地点)(?:\s*[:：]\s*|\s+)(.*)$/.exec(lines[index]);
+          const standalone = /^(?:取货门店|取货地点)[:：]?$/.test(lines[index]);
+          if (match || standalone) {
+            const value = match?.[1] || lines[index + 1];
+            if (!value || /^(?:取货门店|取货地点)[:：]?$/.test(value)) return fail('确认页取货门店摘要不完整');
+            labels.push(storeName(value));
+          }
+        }
+        const distinctNames = [...new Set(labels)];
+        if (distinctNames.length > 1 || (distinctNames.length === 1 && distinctNames[0] !== storeName(p.storeName))) return fail('确认页取货门店与目标不一致或不唯一');
+        if (selected.length === 1 && (state.pickupStoreNumber !== p.storeNumber || (state.pickupStoreName && storeName(state.pickupStoreName) !== storeName(p.storeName)))) return fail('确认页选中门店、门店名称与目标冲突');
+        if (distinctNames.length === 1) {
+          if (state.pickupStoreName && storeName(state.pickupStoreName) !== distinctNames[0]) return fail('确认页门店摘要与选中门店冲突');
           state.pickupStoreName = p.storeName;
         }
       }
@@ -66,10 +92,10 @@
         const required = ['lastName', 'firstName', 'emailAddress', 'fullDaytimePhone'];
         const missing = required.some(name => {
           const fields = all(`input[data-autom="form-field-${name}"]`).filter(visible);
-          return fields.length !== 1 || !norm(fields[0].value) || fields[0].getAttribute('aria-invalid') === 'true';
+          return fields.length !== 1 || !fieldComplete(fields[0]);
         });
-        const extra = all('input[required],select[required],input[aria-required="true"],select[aria-required="true"],input[data-autom="form-field-nationalIdSelf"]').filter(visible);
-        if (missing || extra.some(el => !norm(el.value) || el.getAttribute('aria-invalid') === 'true')) return fail('取货联系人或证件信息未完整，请在 Apple 官网补齐后继续');
+        const extra = all('input[required],select[required],textarea[required],input[aria-required="true"],select[aria-required="true"],textarea[aria-required="true"],input[data-autom="form-field-nationalIdSelf"]').filter(el => visible(el) || [...(el.labels || [])].some(visible));
+        if (missing || extra.some(el => !el.disabled && !fieldComplete(el))) return fail('取货联系人或证件信息未完整，请在 Apple 官网补齐后继续');
         // Only booleans leave this scope; no personal value is retained or returned.
         state.pickupProgress.state = 'contact-ready';
         return oneButton('continue-button-label', 'continue-contact');
@@ -79,6 +105,8 @@
         const radios = all('input[data-autom^="checkout-billingOptions-"]').filter(usableRadio);
         const alipay = radios.filter(el => el.value === 'ALIPAY');
         if (alipay.length !== 1) return fail('无法唯一确定支付宝付款选项');
+        const alipayLabel = norm(alipay[0].getAttribute('aria-label') || [...(alipay[0].labels || [])].map(text).join(' '));
+        if (alipayLabel && !/^(?:支付宝|alipay)$/i.test(alipayLabel)) return fail('支付宝选项与可见付款说明冲突，请在官网确认');
         if (!chosen(alipay[0])) return offer('select-alipay', target(alipay[0]), 'ALIPAY');
         if (radios.some(el => chosen(el) && el !== alipay[0])) return fail('付款方式选中状态不唯一');
         return oneButton('continue-button-review', 'continue-review');
@@ -112,11 +140,16 @@
       if (!target(store)) { const more = button('show-more-stores-button'); return more.length === 1 ? offer('show-more-stores', more[0]) : fail('指定门店尚未展开，请在官网展开'); }
       if (!chosen(store)) return offer('select-store', target(store), p.storeNumber);
       if (selected.length !== 1 || selected[0] !== store) return fail('选中的取货门店与目标不一致');
-      const dates = all('input[name="bartPickupDateSelectorButtonGroup"]').filter(usableRadio);
-      const date = dates.find(chosen);
+      const dateNodes = all('input[name="bartPickupDateSelectorButtonGroup"]');
+      const selectedDates = dateNodes.filter(chosen);
+      if (selectedDates.length > 1 || selectedDates.some(el => !usableRadio(el))) return fail('已选取货日期不可用或不唯一');
+      const dates = dateNodes.filter(usableRadio);
+      if (new Set(dates.map(el => el.value)).size !== dates.length) return fail('取货日期编号不唯一');
+      const date = selectedDates[0];
       const selects = all('select[data-autom="pickup-availablewindow-dropdown"]').filter(visible);
       if (selects.length > 1) return fail('取货时段选项不唯一');
-      const select = selects[0], slots = select ? [...select.options].filter(option => norm(option.value) && !option.disabled) : [];
+      const select = selects[0], slots = select ? [...select.options].filter(option => norm(option.value) && optionAvailable(option)) : [];
+      if (new Set(slots.map(option => option.value)).size !== slots.length) return fail('取货时段编号不唯一');
       const continues = button('fulfillment-continue-button');
       const signature = JSON.stringify([step, p.storeNumber, dates.map(el => [el.value, chosen(el)]), slots.map(el => el.value), select?.value || '', continues.length]);
       if (signature !== observed) { observed = signature; since = now(); }
@@ -127,6 +160,8 @@
       const earliest = dates.find(el => !exhaustedDates.has(el.value));
       if (earliest && !chosen(earliest)) return offer('select-date', target(earliest), earliest.value);
       if (!select || !slots.length) {
+        // An empty first render is not proof that this date has no windows.
+        if (now() - since < SLOT_LOAD_TIMEOUT_MS) return state;
         if (date) exhaustedDates.add(date.value);
         const next = dates.find(el => !exhaustedDates.has(el.value));
         return next ? offer('select-date', target(next), next.value) : fail('没有可验证的取货时段，请在官网选择');

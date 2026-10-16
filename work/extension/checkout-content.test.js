@@ -13,7 +13,7 @@ const productName = color => `iPhone 18 Pro 512GB ${color || product.Color}`;
 
 // A local DOM fixture for the selectors used by the content script. Clicks only
 // increment a counter; there is no browser, network, or navigation.
-function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, selectedLabel, totals=[], errors=[], looseNames=[], paymentChoices=[], images=[], links=[], bindIntent=intent, step='', controlAutom, pickupChoices=[]} = {}) {
+function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, selectedLabel, totals=[], errors=[], looseNames=[], paymentChoices=[], images=[], links=[], bindIntent=intent, step='', controlAutom, pickupChoices=[], pathname} = {}) {
   let clicks = 0;
   const element = (value, attributes={}, appearance={}) => ({
     innerText:value, textContent:value, labels:[], disabled:false,
@@ -64,6 +64,7 @@ function contentFixture({phase='CHECKOUT', rows=[], bodyText='', heading, select
   ]);
   const document = {body, documentElement:{}, querySelectorAll:selector => [...new Set(selector.split(',').flatMap(part => selectors.get(part) || []))], getElementById:() => null};
   const location = new URL(`https://secure6.www.apple.com.cn/shop/${phase === 'BAG' ? 'bag' : 'checkout'}`);
+  if (pathname) location.pathname=pathname;
   if (step) location.search = '?_s=' + step;
   const window = {}; window.top = window;
   let listener;
@@ -378,4 +379,19 @@ test('Review selected target radio cannot override a contradictory explicit pick
  const s=fixture.snapshot();assert.equal(s.pickupStoreNumber,'R617');assert(s.issues.some(issue=>/门店/.test(issue)));assert.equal(fixture.act('submit-order').ok,false);assert.equal(fixture.clicks(),0);
  const transition=advanceCheckout(createCheckoutState(target,1000),{type:'OBSERVE',observation:{...s,phase:s.stage}},2000);
  assert.equal(transition.state.status,'BLOCKED');assert.equal(transition.state.submitAttempt,null);assert.equal(fixture.act('submit-order').ok,false);assert.equal(fixture.clicks(),0);
+});
+
+test('structured payment identity cannot be overridden by an Alipay label',()=>{
+ for(const choice of [
+  {label:'支付宝',autom:'checkout-billingOptions-WECHAT',value:'WECHAT',checked:true},
+  {label:'银行卡',autom:'checkout-billingOptions-ALIPAY',value:'ALIPAY',checked:true},
+  {label:'PayPal',autom:'checkout-billingOptions-ALIPAY',value:'ALIPAY',checked:true},
+  {label:'支付宝',value:'CREDIT_CARD',checked:true}
+ ]){const f=contentFixture(completeReview({paymentChoices:[choice],totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.equal(f.snapshot().paymentMethod,null);assert.equal(f.act('submit-order').ok,false);assert.equal(f.clicks(),0);}
+});
+test('multiple visible selected Alipay controls are ambiguous and cannot submit',()=>{
+ const f=contentFixture(completeReview({paymentChoices:[{label:'支付宝',checked:true},{label:'支付宝',checked:true}],totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.equal(f.snapshot().paymentMethod,null);assert.equal(f.act('submit-order').ok,false);assert.equal(f.clicks(),0);
+});
+test('payment page takes precedence over a retained Review heading and submit button',()=>{
+ const f=contentFixture(completeReview({pathname:'/shop/payment',step:'Review',bodyText:'送货地址 Apple Store 条款和条件 立即下单 扫码支付',totals:[{autom:'bagtotalvalue',text:'RMB 11,999'}]}));assert.equal(f.snapshot().stage,'PAYMENT');assert.equal(f.act('submit-order').ok,false);assert.equal(f.clicks(),0);
 });

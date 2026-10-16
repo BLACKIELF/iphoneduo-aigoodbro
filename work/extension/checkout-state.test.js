@@ -255,6 +255,7 @@ test("payment always stops without any payment action", () => {
     assert.equal(result.state.status, "PAYMENT_STOPPED");
     assert.equal(result.effect.type, "STOP");
     assert.equal(advance(review, result.state).effect.type, "STOP");
+    for (const type of ["CANCEL", "BLOCK"]) assert.equal(advance({ type }, result.state).state.status, "PAYMENT_STOPPED");
   }
 });
 

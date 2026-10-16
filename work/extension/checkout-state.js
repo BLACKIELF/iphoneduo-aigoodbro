@@ -131,6 +131,7 @@ export function advanceCheckout(state, event, now) {
   current.intent = validateCheckoutIntent(current.intent);
   if (current.status === "ORDER_CREATED_UNPAID") return stop(current, now, current.status, current.reason);
   if (!event || typeof event !== "object") return stop(current, now, "BLOCKED", "缺少有效的下单事件");
+  if (current.status === "PAYMENT_STOPPED" && ["CANCEL", "BLOCK"].includes(event.type)) return stop(current, now, current.status, current.reason);
   if (event.type === "CANCEL") return stop(current, now, current.submitAttempt ? "SUBMISSION_UNKNOWN" : "CANCELLED", current.submitAttempt ? "自动化已停止；提交可能已经发出，请核对订单结果" : "已取消自动下单");
   if (event.type === "BLOCK") return stop(current, now, current.submitAttempt ? "SUBMISSION_UNKNOWN" : "BLOCKED", text(event.reason) || "自动下单已停止");
   if (event.type !== "OBSERVE") return stop(current, now, "BLOCKED", "不支持的下单事件");

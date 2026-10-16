@@ -1,5 +1,5 @@
 const $ = id => document.getElementById('checkout-' + id);
-let products = [], stores = [], run = null, busy = false;
+let products = [], stores = [], run = null, busy = false, stopping = false, operationEpoch = 0;
 const labels = {
   WAITING_FOR_STOCK: '等待指定门店有货（单次）', READY: '准备中', SELECTING_PRODUCT: '自动选配中', CHECKING_OUT: '自动结账中', WAITING_FOR_PAGE: '等待页面', READY_TO_SUBMIT: '等待提交授权', PAYMENT_STOPPED: '已停在付款步骤', CREATED: '准备中', RUNNING: '自动执行中', SELECTING: '选配中', BAG_VERIFIED: '购物袋已核对',
   CHECKOUT: '结账中', REVIEW_VERIFIED: '订单已核对', WAITING_FOR_IDENTITY: '等待身份验证',
@@ -22,18 +22,23 @@ function render() {
   $('log').replaceChildren(...(run?.log || []).slice().reverse().map(entry => {
     const p = document.createElement('p'); p.textContent = new Date(entry.time).toLocaleTimeString('zh-CN') + ' ' + entry.message; return p;
   }));
-  for (const id of ['start', 'trial', 'arm', 'resume', 'stop', 'open']) $(id).disabled = busy || (['resume', 'stop', 'open'].includes(id) && !run) || (id === 'open' && run?.tabId == null);
+  for (const id of ['start', 'trial', 'arm', 'resume', 'open']) $(id).disabled = busy || (['resume', 'open'].includes(id) && !run) || (id === 'open' && run?.tabId == null);
+  $('stop').disabled = stopping || (!run && !busy);
   $('arm').disabled ||= $('fulfillment').value !== 'pickup' || $('entry').value !== 'bag';
 }
-async function command(type, extra = {}) {
-  if (busy) return;
+async function command(type, extra = {}, expectedEpoch = null) {
+  const stop = type === 'checkout-stop';
+  if (stop ? stopping : expectedEpoch === null ? busy : expectedEpoch !== operationEpoch) return;
+  const epoch = expectedEpoch ?? ++operationEpoch;
+  if (stop) stopping = true;
   busy = true; render();
   try {
     const result = await chrome.runtime.sendMessage({ type, ...extra });
+    if (epoch !== operationEpoch) return;
     if (!result?.ok) throw new Error(result?.error || '扩展未返回结果');
     run = result.run; $('message').textContent = run?.state.reason || ''; render();
-  } catch (error) { $('message').textContent = error.message; }
-  finally { busy = false; render(); }
+  } catch (error) { if (epoch === operationEpoch) $('message').textContent = error.message; }
+  finally { if (epoch === operationEpoch) { busy = false; stopping = false; render(); } }
 }
 function fulfillmentFields() {
   const pickup = $('fulfillment').value === 'pickup';
@@ -63,22 +68,24 @@ function purchaseRequest(trial = false) {
 }
 async function startPurchase(trial = false, armed = false) {
   if (busy) return;
+  const epoch = ++operationEpoch;
+  busy = true; render();
   try {
     const request = purchaseRequest(trial);
     if (armed) {
       if (request.intent.fulfillment !== 'pickup' || request.intent.entryMode !== 'bag') throw new Error('有货触发需要指定门店自提，并仅使用已准备的购物袋。');
-      busy = true; render();
       const state = await chrome.runtime.sendMessage({ type: 'get-backend-state' });
+      if (epoch !== operationEpoch) return;
       if (!state?.ok || !state.monitoring) throw new Error('请先启动相同商品和门店的 Java 库存监控。');
       const matches = state.tasks.filter(t => t.areaCode === 'cn' && t.store?.StoreNumber === request.intent.pickup.storeNumber && t.product?.Code === request.intent.product.Code);
       if (matches.length !== 1) throw new Error('需要且只能有一个相同商品与门店的监控任务。');
       request.taskId = matches[0].id;
       request.identity = `cn:${request.intent.pickup.storeNumber}:${request.intent.product.Code}`;
     }
-    busy = false;
-    await command(armed ? 'checkout-arm' : 'checkout-start', request);
-  } catch (error) { $('message').textContent = error.message; }
-  finally { busy = false; render(); }
+    if (epoch !== operationEpoch) return;
+    await command(armed ? 'checkout-arm' : 'checkout-start', request, epoch);
+  } catch (error) { if (epoch === operationEpoch) $('message').textContent = error.message; }
+  finally { if (epoch === operationEpoch) { busy = false; render(); } }
 }
 async function initialize() {
   const [data, storeData] = await Promise.all(['data/products/product_data_cn.json', 'data/stores/store_cn.json'].map(async path => {

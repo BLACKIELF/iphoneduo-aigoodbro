@@ -32,3 +32,10 @@ test('pickup final store prioritizes ID and uses strict exact name only when ID 
  assert.deepEqual(D.validateFinal({...s,pickupStoreNumber:''},i),[]);assert(D.validateFinal({...s,pickupStoreNumber:'',pickupStoreName:'长沙'},i).includes('pickup-store-mismatch'));assert(D.validateFinal({...s,pickupStoreNumber:'',pickupStoreName:''},i).includes('pickup-store-mismatch'));
  assert(D.validateFinal(s,{...i,runMode:'review'}).includes('submission-not-authorized'));
 });
+
+test('pickup name fallback preserves meaningful spacing and shares NFKC normalization with state',()=>{
+ const i={...intent,fulfillment:'pickup',runMode:'submit',pickup:{storeNumber:'R617',storeName:'Apple 长沙',slotPolicy:'earliest'}};
+ const s={...review(),fulfillment:'pickup',pickupStoreNumber:'',pickupStoreName:'Apple长 沙'};
+ assert(D.validateFinal(s,i).includes('pickup-store-mismatch'));
+ assert.deepEqual(D.validateFinal({...s,pickupStoreName:'Ａｐｐｌｅ 长沙'},i),[]);
+});

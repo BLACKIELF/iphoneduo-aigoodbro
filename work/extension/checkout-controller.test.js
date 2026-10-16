@@ -50,7 +50,7 @@ function harness(t) {
       onUpdated: { addListener: fn => { listeners.updated = fn; } },
       onRemoved: { addListener: fn => { listeners.removed = fn; } }
     },
-    alarms: { create: async (name, options) => events.push({ kind: 'alarm', name, options }), onAlarm: { addListener: fn => { listeners.alarm = fn; } } }
+    alarms: { create: async (name, options) => { events.push({ kind: 'alarm', name, options }); await h.afterAlarm?.(); }, onAlarm: { addListener: fn => { listeners.alarm = fn; } } }
   };
   const controller = createCheckoutController(api);
   return Object.assign(h, {
@@ -60,9 +60,9 @@ function harness(t) {
     advanceTime: milliseconds => { now += milliseconds; },
     status: async () => (await controller.handle({ type: 'checkout-status' })).run,
     actions: () => events.filter(event => event.kind === 'message' && event.message.type === 'checkout:act'),
-    async pulse(advanceMs = 1000) {
+    async pulse(advanceMs = 1000, activeController = controller) {
       now += advanceMs;
-      controller.wake(0);
+      activeController.wake(0);
       const [id, fn] = timers.entries().next().value;
       timers.delete(id);
       await fn();
@@ -75,6 +75,86 @@ test('checkout URL allowlist rejects alternate schemes and lookalike hosts', () 
   assert.equal(isCheckoutURL('https://www.apple.com.cn/shop/bag'), true);
   assert.equal(isCheckoutURL('https://secure6.www.apple.com.cn/shop/checkout'), true);
   for (const url of ['http://www.apple.com.cn/shop/bag', 'https://www.apple.com.cn.evil.test/shop/bag', 'https://evil.test/shop/bag', 'https://www.apple.com.cn/support/', 'javascript:alert(1)']) assert.equal(isCheckoutURL(url), false);
+});
+
+test('stopping before any run does not permanently lock later starts', async t => {
+  const h = harness(t);
+  assert.deepEqual(await h.controller.handle({ type: 'checkout-stop' }), { ok: true, run: null });
+  assert.deepEqual(await h.controller.handle({ type: 'checkout-stop' }), { ok: true, run: null });
+  assert.equal((await h.start()).ok, true);
+});
+
+test('restart with a submission fence but no action record eventually becomes uncertain', async t => {
+  const h = harness(t);
+  await h.start(); h.snapshot = clone(review); await h.pulse();
+  delete h.store.checkoutRun.pendingAction;
+  const restarted = createCheckoutController(h.api);
+  const run = await h.pulse(46000, restarted);
+  assert.equal(run.state.status, 'SUBMISSION_UNKNOWN');
+  assert.equal(h.actions().filter(event => event.message.command.kind === 'submit-order').length, 1);
+});
+
+test('stock that expires while trigger consumption is saving cannot open a tab', async t => {
+  const h = harness(t), entered = deferred(), release = deferred();
+  await h.arm(); h.advanceTime(1000);
+  h.afterSave = async value => {
+    if (value.checkoutRun.trigger?.status === 'consumed') { h.afterSave = null; entered.resolve(); await release.promise; }
+  };
+  const triggered = h.controller.inventory(inventorySnapshot());
+  await entered.promise; h.advanceTime(61000); release.resolve();
+  await triggered;
+  assert.equal(h.tabs.size, 0);
+  assert.equal((await h.status()).state.status, 'BLOCKED');
+});
+
+test('stock that expires while a tab is being created cannot begin checkout', async t => {
+  const h = harness(t), entered = deferred(), release = deferred();
+  await h.arm(); h.advanceTime(1000);
+  h.afterCreate = async () => { entered.resolve(); await release.promise; };
+  const triggered = h.controller.inventory(inventorySnapshot());
+  await entered.promise; h.advanceTime(61000); release.resolve();
+  await triggered;
+  assert.equal((await h.status()).state.status, 'BLOCKED');
+  await h.pulse();
+  assert.equal(h.actions().length, 0);
+});
+
+test('cancelling during the triggered alarm setup prevents later checkout actions', async t => {
+  const h = harness(t), entered = deferred(), release = deferred();
+  await h.arm(); h.advanceTime(1000);
+  h.afterAlarm = async () => { h.afterAlarm = null; entered.resolve(); await release.promise; };
+  const triggered = h.controller.inventory(inventorySnapshot());
+  await entered.promise;
+  const cancelled = h.controller.cancelArmed('监控已停止');
+  release.resolve(); await Promise.all([triggered, cancelled]);
+  assert.equal((await h.status()).state.status, 'CANCELLED');
+  await h.pulse();
+  assert.equal(h.actions().length, 0);
+});
+
+test('stopping on an existing payment page cannot clear the new-order acknowledgement gate', async t => {
+  const h = harness(t);
+  await h.start(); h.snapshot = { stage: 'PAYMENT', controls: [] }; await h.pulse();
+  const stopped = await h.controller.handle({ type: 'checkout-stop' });
+  assert.equal(stopped.run.state.status, 'PAYMENT_STOPPED');
+  assert.equal((await h.start()).ok, false);
+  assert.equal(h.actions().length, 0);
+});
+
+test('stop during resume persistence prevents navigation back to the bag', async t => {
+  const h = harness(t), entered = deferred(), release = deferred();
+  await h.start();
+  h.snapshot = { stage: 'PRODUCT', product, controls: [{ kind: 'add-to-bag' }] };
+  await h.pulse(); await h.controller.handle({ type: 'checkout-stop' });
+  h.afterSave = async value => {
+    if (value.checkoutRun.state.status === 'RUNNING') { h.afterSave = null; entered.resolve(); await release.promise; }
+  };
+  const resumed = h.controller.handle({ type: 'checkout-resume' });
+  await entered.promise;
+  const stopped = h.controller.handle({ type: 'checkout-stop' });
+  release.resolve(); await Promise.all([resumed, stopped]);
+  assert.equal(h.events.filter(event => event.kind === 'update').length, 0);
+  assert.equal((await h.status()).state.status, 'CANCELLED');
 });
 
 test('start opens the bag first; an observed empty bag opens the chosen SKU', async t => {
