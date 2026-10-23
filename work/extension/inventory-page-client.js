@@ -6,14 +6,14 @@ const RETRY_KEY = "inventoryPageRetryAt";
 const RESULT_KEY = "inventoryPageResults";
 
 function normalizeTask(task) {
-  if (!task || Array.isArray(task) || task.areaCode !== "cn" ||
+  if (!task || Array.isArray(task) || !["cn", "jp"].includes(task.areaCode) ||
       typeof task.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(task.id) ||
       ["__proto__", "constructor", "prototype"].includes(task.id) ||
       typeof task.store?.StoreNumber !== "string" || !/^R\d{3}$/.test(task.store.StoreNumber) ||
       typeof task.product?.Code !== "string" || !/^[A-Z0-9]{5,12}\/[A-Z]$/.test(task.product.Code)) {
-    throw new Error("官网查询仅支持一个有效的中国大陆监控任务");
+    throw new Error("官网查询仅支持一个有效的中国大陆或日本监控任务");
   }
-  return { id: task.id, areaCode: "cn", store: {
+  return { id: task.id, areaCode: task.areaCode, store: {
     StoreNumber: task.store.StoreNumber, District: String(task.store.District || "")
   }, product: { Code: task.product.Code } };
 }
@@ -29,13 +29,15 @@ function sameStoredTask(tasks, task) {
   catch { return false; }
 }
 
-function productTab(tab) {
+function productTab(tab, areaCode = "cn") {
   try {
     const url = new URL(tab.url);
     const path = decodeURIComponent(url.pathname);
+    const validOriginAndPath = areaCode === "jp"
+      ? (url.origin === "https://www.apple.com" && /^\/jp\/shop\/(?:buy-iphone|buy-watch|product)\/[^/]+/.test(path))
+      : (url.origin === "https://www.apple.com.cn" && /^\/shop\/(?:buy-iphone|buy-watch|product)\/[^/]+/.test(path));
     return Number.isInteger(tab.id) && tab.id >= 0 &&
-      url.origin === "https://www.apple.com.cn" && !url.username && !url.password &&
-      /^\/shop\/(?:buy-iphone|buy-watch|product)\/[^/]+/.test(path) &&
+      validOriginAndPath && !url.username && !url.password &&
       !/(?:^|\/)(?:secure|bag|checkout|signin|account|orders?)(?:\/|$)/i.test(path) &&
       (!tab.pendingUrl || tab.pendingUrl === tab.url);
   } catch { return false; }
@@ -112,10 +114,16 @@ export function createInventoryPageClient(chrome, { now = Date.now } = {}) {
       ensureActive(run);
       const retryAt = typeof saved[RETRY_KEY] === "number" ? saved[RETRY_KEY] : Date.parse(saved[RETRY_KEY]);
       if (retryAt > now()) throw new Error("Apple 库存接口正在等待重试，请在冷却结束后再查询");
-      const tabs = await chrome.tabs.query({ url: "https://www.apple.com.cn/shop/*" });
+      const tabPattern = run.task.areaCode === "jp"
+        ? "https://www.apple.com/jp/shop/*"
+        : "https://www.apple.com.cn/shop/*";
+      const tabs = await chrome.tabs.query({ url: tabPattern });
       ensureActive(run);
-      const tab = tabs.find(productTab);
-      if (!tab) throw new Error("请先打开一个 Apple 中国大陆官网商品页，再点官网查询");
+      const tab = tabs.find((t) => productTab(t, run.task.areaCode));
+      if (!tab) {
+        const regionName = run.task.areaCode === "jp" ? "日本" : "中国大陆";
+        throw new Error(`请先打开一个 Apple ${regionName}官网商品页，再点官网查询`);
+      }
       run.tabId = tab.id;
       run.requestId = crypto.randomUUID();
       let response;
@@ -133,7 +141,7 @@ export function createInventoryPageClient(chrome, { now = Date.now } = {}) {
         chrome.tabs.get(tab.id), chrome.storage.local.get(["tasks"])
       ]);
       ensureActive(run);
-      if (!productTab(currentTab) || currentTab.url !== tab.url || currentTab.id !== tab.id) {
+      if (!productTab(currentTab, run.task.areaCode) || currentTab.url !== tab.url || currentTab.id !== tab.id) {
         throw new Error("官网页面已切换，本次库存结果已丢弃");
       }
       if (!sameStoredTask(current.tasks, run.task)) throw new Error("监控任务已更改或移除，本次结果已丢弃");

@@ -68,11 +68,11 @@
         const lines = String(document.body?.innerText || document.body?.textContent || '').split(/[\r\n]+/).map(norm).filter(Boolean);
         const labels = [];
         for (let index = 0; index < lines.length; index++) {
-          const match = /^(?:取货门店|取货地点)(?:\s*[:：]\s*|\s+)(.*)$/.exec(lines[index]);
-          const standalone = /^(?:取货门店|取货地点)[:：]?$/.test(lines[index]);
+          const match = /^(?:取货门店|取货地点|受取店舗|受取場所)(?:\s*[:：]\s*|\s+)(.*)$/.exec(lines[index]);
+          const standalone = /^(?:取货门店|取货地点|受取店舗|受取場所)[:：]?$/.test(lines[index]);
           if (match || standalone) {
             const value = match?.[1] || lines[index + 1];
-            if (!value || /^(?:取货门店|取货地点)[:：]?$/.test(value)) return fail('确认页取货门店摘要不完整');
+            if (!value || /^(?:取货门店|取货地点|受取店舗|受取場所)[:：]?$/.test(value)) return fail('确认页取货门店摘要不完整');
             labels.push(storeName(value));
           }
         }
@@ -112,7 +112,7 @@
         return oneButton('continue-button-review', 'continue-review');
       }
       if (step !== 'fulfillment') return state;
-      const pickupTabs = all('button').filter(el => available(el) && text(el) === '我要取货');
+      const pickupTabs = all('button').filter(el => available(el) && ['我要取货', '店舗受取', '受け取り', '受取'].includes(text(el)));
       if (pickupTabs.length > 1) return fail('取货方式选项不唯一');
       if (pickupTabs.length === 1 && !chosen(pickupTabs[0])) return offer('select-pickup', pickupTabs[0]);
       if (pickupTabs.length === 0 && stores.length === 0) return state;
@@ -136,7 +136,7 @@
         return fail('列表中没有指定取货门店，请在官网确认地区和库存');
       }
       const store = exact[0], storeLabel = [...(store.labels || [])].map(text).join(' ');
-      if (store.disabled || /不可取货|无法取货|不可提取|无法提取|无货|售罄/.test(storeLabel)) return fail('指定门店目前不可取货');
+      if (store.disabled || /不可取货|无法取货|不可提取|无法提取|无货|售罄|受取不可|在庫切れ|在庫がありません/.test(storeLabel)) return fail('指定门店目前不可取货');
       if (!target(store)) { const more = button('show-more-stores-button'); return more.length === 1 ? offer('show-more-stores', more[0]) : fail('指定门店尚未展开，请在官网展开'); }
       if (!chosen(store)) return offer('select-store', target(store), p.storeNumber);
       if (selected.length !== 1 || selected[0] !== store) return fail('选中的取货门店与目标不一致');

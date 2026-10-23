@@ -23,14 +23,17 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "1018v1",
+  "version_name": "1023v1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxLAGJ/WPG/bWcZVcjyfcJ+e0aLrNMMJ+L7bmHzMQ3gc6nfhGaUePlTDkI5JExzjYG8wqtNJVN6RjlCy4i8aLwBTfJbR06A/6b+mCiqKlU7nFSLg80uMY1E6MfJ1rLQdZ4tNm03bq9XmR2vPTPF7RhUBuMSB/NxMjGxXCKJOsovaR9PyuGAEvGHqJu3ggvdGhMVyLq3euKDKVfLXYH+i2byYQ8D4eB/8+keWuK9dMWJf7j+sPIfpGdn43w/O9aKOt7GinjhKgh4FWBzCFqZNzA3Z3OoNysc7YYAwLh7xVA1HT6bAGccZkVnfu9DgjzkIFOD8uBIw+dCGP8USBRVyrkwIDAQAB",
   "content_scripts": [
     {
       "matches": [
         "https://www.apple.com.cn/shop/buy-iphone/*",
         "https://www.apple.com.cn/shop/buy-watch/*",
-        "https://www.apple.com.cn/shop/product/*"
+        "https://www.apple.com.cn/shop/product/*",
+        "https://www.apple.com/jp/shop/buy-iphone/*",
+        "https://www.apple.com/jp/shop/buy-watch/*",
+        "https://www.apple.com/jp/shop/product/*"
       ],
       "js": [
         "inventory-page-bridge.js"
@@ -43,7 +46,10 @@
       "matches": [
         "https://www.apple.com.cn/shop/buy-iphone/*",
         "https://www.apple.com.cn/shop/buy-watch/*",
-        "https://www.apple.com.cn/shop/product/*"
+        "https://www.apple.com.cn/shop/product/*",
+        "https://www.apple.com/jp/shop/buy-iphone/*",
+        "https://www.apple.com/jp/shop/buy-watch/*",
+        "https://www.apple.com/jp/shop/product/*"
       ],
       "js": [
         "inventory-content.js"
@@ -54,7 +60,9 @@
     {
       "matches": [
         "https://www.apple.com.cn/shop/*",
-        "https://secure6.www.apple.com.cn/shop/*"
+        "https://secure6.www.apple.com.cn/shop/*",
+        "https://www.apple.com/jp/shop/*",
+        "https://secure6.www.apple.com/jp/shop/*"
       ],
       "js": [
         "checkout-dom.js",

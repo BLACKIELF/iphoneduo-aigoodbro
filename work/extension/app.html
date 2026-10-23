@@ -98,10 +98,11 @@
       <div class="section-heading"><div><p class="step">04</p><h2>一键直达下单界面 / 自动购买</h2></div><span id="checkout-status" class="status-badge idle">尚未启动</span></div>
       <p class="settings-note">「直达下单界面」可自动完成商品选配、加入购物袋、穿透访客结账、选择门店自提最早时段与支付宝，直接带您到达官网最终下单页面（停在立即下单前，由您最后确认）。任务列表也支持单键直达下单。</p>
       <div class="field-grid" style="margin-top:16px">
+        <label><span>购买地区</span><select id="checkout-area"><option value="cn" selected>中国大陆 (Apple Store CN)</option><option value="jp">日本 (Apple Store JP)</option></select></label>
         <label><span>购买型号</span><select id="checkout-model"></select></label>
         <label><span>购买容量</span><select id="checkout-capacity"></select></label>
         <label><span>购买颜色</span><select id="checkout-color"></select></label>
-        <label><span>订单金额上限（元，含运费）</span><input id="checkout-budget" type="number" min="1" step="1" placeholder="请填写本次订单最高金额"></label>
+        <label><span>订单金额上限（含运费）</span><input id="checkout-budget" type="number" min="1" step="1" placeholder="请填写本次订单最高金额（CNY / JPY）"></label>
         <label><span>履约方式</span><select id="checkout-fulfillment"><option value="delivery">邮寄</option><option value="pickup">指定门店自提</option></select></label>
         <label><span>购买入口</span><select id="checkout-entry"><option value="product">核对购物袋，缺少商品时自动选配</option><option value="bag">仅使用已准备的购物袋</option></select></label>
         <label id="checkout-store-field" hidden><span>唯一自提门店 · 最早可用时段</span><select id="checkout-store"></select></label>

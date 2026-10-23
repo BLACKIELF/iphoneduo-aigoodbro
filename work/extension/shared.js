@@ -92,6 +92,9 @@ export function buildFulfillmentPath(tasks) {
   }
   if (first.areaCode === "jp") {
     params.set("cppart", "UNLOCKED_JP");
+    if (!validPostal) {
+      params.set("store", first.store.StoreNumber);
+    }
   } else if (first.areaCode !== "cn" || !validPostal) {
     params.set("store", first.store.StoreNumber);
   }

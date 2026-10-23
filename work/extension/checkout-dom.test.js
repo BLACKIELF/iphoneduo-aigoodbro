@@ -39,3 +39,20 @@ test('pickup name fallback preserves meaningful spacing and shares NFKC normaliz
  assert(D.validateFinal(s,i).includes('pickup-store-mismatch'));
  assert.deepEqual(D.validateFinal({...s,pickupStoreName:'Ａｐｐｌｅ 长沙'},i),[]);
 });
+
+test('supports Japan Apple Store locations, JPY pricing, Japanese product models and review headings',()=>{
+ for(const u of ['https://www.apple.com/jp/shop/bag','https://secure6.www.apple.com/jp/shop/checkout']) assert(D.officialLocation(u));
+ for(const u of ['https://www.apple.com/us/shop/bag','https://www.apple.com/shop/bag','http://www.apple.com/jp/shop/bag']) assert(!D.officialLocation(u));
+ assert.equal(D.parseMoney('JPY 189,800'), 189800);
+ assert.equal(D.parseMoney('189,800円'), 189800);
+ assert.equal(D.parseMoney('¥189,800'), 189800);
+ const jpProduct = { Model: 'iPhone 16 Pro', Capacity: '256GB', Color: 'ナチュラルチタニウム', Code: 'MYMW3J/A' };
+ const parsed = D.parseProduct('iPhone 16 Pro 256GB ナチュラルチタニウム MYMW3J/A');
+ assert.deepEqual(parsed, jpProduct);
+ assert(D.sameProduct(parsed, jpProduct));
+ assert(D.reviewHeading('ご注文の確定'));
+ assert(D.reviewHeading('ご注文の確認'));
+ const jpIntent = { product: jpProduct, areaCode: 'jp', quantity: 1, maxTotal: 250000, allowSubmit: true, acknowledgedTerms: true };
+ const jpReview = { stage: 'REVIEW', product: { ...jpProduct }, cartItems: [{ product: { ...jpProduct }, quantity: 1 }], quantity: 1, total: 189800, currency: 'JPY', fulfillment: 'delivery', paymentMethod: 'credit-card', termsPresent: true, issues: [] };
+ assert.deepEqual(D.validateFinal(jpReview, jpIntent), []);
+});

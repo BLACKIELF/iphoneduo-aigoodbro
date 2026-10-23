@@ -75,17 +75,17 @@
     const candidates = all('[data-autom="bag-total-value"],[data-autom="bagtotalvalue"],[data-autom="order-total"],[data-autom="orderSummaryTotal"],[data-autom="order-summary-total"],.rs-summary-total').filter(visible).map(el => D.parseMoney(text(el))).filter(v => v !== null);
     if (candidates.length) return candidates.every(v => v === candidates[0]) ? candidates[0] : null;
     const body = text(document.body);
-    const matches = [...body.matchAll(/(?:订单总额|订单总计|总计|总金额|合计)\s*[:：]?\s*(?:RMB|CNY|人民币|[¥￥])\s*([\d,]+(?:\.\d{1,2})?)/gi)].map(m => Number(m[1].replace(/,/g, '')));
+    const matches = [...body.matchAll(/(?:订单总额|订单总计|总计|总金额|合计|合計|ご請求額|お支払い総額)\s*[:：]?\s*(?:RMB|CNY|JPY|人民币|[¥￥])\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*円/gi)].map(m => Number((m[1] || m[2]).replace(/,/g, '')));
     return matches.length && matches.every(v => v === matches[0]) ? matches[0] : null;
   }
   function stage() {
-    const body = text(document.body), path = location.pathname;
-    const challenge = all('input[autocomplete="one-time-code"],iframe[src*="captcha"],iframe[title*="验证码"],iframe[title*="验证"]');
-    if (challenge.some(visible) || all('h1,h2,[role="dialog"]').filter(visible).some(el => /^(?:验证你的身份|验证您的身份|双重认证|输入验证码|安全验证)/.test(text(el)))) return 'IDENTITY_CHALLENGE';
-    if (/(?:订单号|订单编号)\s*[:：]?\s*W\d{8,}/i.test(body)) return 'ORDER_CREATED';
-    if (/\/(?:payment|payments)(?:\/|$)/.test(path) || /(?:扫码支付|打开支付宝完成付款|请在\s*\d+\s*分钟内完成支付)/.test(body)) return 'PAYMENT';
+    const body = text(document.body), path = location.pathname.replace(/^\/jp/, '');
+    const challenge = all('input[autocomplete="one-time-code"],iframe[src*="captcha"],iframe[title*="验证码"],iframe[title*="验证"],iframe[title*="認証"]');
+    if (challenge.some(visible) || all('h1,h2,[role="dialog"]').filter(visible).some(el => /^(?:验证你的身份|验证您的身份|双重认证|输入验证码|安全验证|サインイン|本人確認|2ファクタ認証)/.test(text(el)))) return 'IDENTITY_CHALLENGE';
+    if (/(?:订单号|订单编号|ご注文番号|注文番号)\s*[:：]?\s*W\d{8,}/i.test(body)) return 'ORDER_CREATED';
+    if (/\/(?:payment|payments)(?:\/|$)/.test(path) || /(?:扫码支付|打开支付宝完成付款|请在\s*\d+\s*分钟内完成支付|お支払い方法)/.test(body)) return 'PAYMENT';
     const step = new URL(location.href).searchParams.get('_s') || '';
-    if ((all('h1,h2').filter(visible).some(el => D.reviewHeading(text(el))) || /^Review(?:$|[-_])/i.test(step)) && exactControl(['立即下单'], ['place-order','place-order-button','continue-button-placeOrder'])) return 'REVIEW';
+    if ((all('h1,h2').filter(visible).some(el => D.reviewHeading(text(el))) || /^Review(?:$|[-_])/i.test(step)) && exactControl(['立即下单','注文を確定する','ご注文を確定する'], ['place-order','place-order-button','continue-button-placeOrder'])) return 'REVIEW';
     if (/\/shop\/bag(?:\/|$)/.test(path)) return 'BAG';
     if (/\/shop\/(?:checkout|signin)(?:\/|$)/.test(path)) return 'CHECKOUT';
     if (/\/shop\/buy-iphone\//.test(path)) return 'PRODUCT';
@@ -115,9 +115,14 @@
       const conflictingIdentity = /WECHAT|INSTALLMENT|CREDIT|DEBIT|PAYPAL|APPLE.?PAY|UNIONPAY/i.test(String(el.value || '') + ' ' + autom);
       const exactLabel = /^(?:支付宝|alipay)$/i.test(value);
       const explicitAlipay = !conflictingIdentity && (billingOption ? el.value === 'ALIPAY' && (!value || exactLabel) : exactLabel);
-      return (el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && explicitAlipay ? 'alipay' : 'unknown';
+      if ((el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && explicitAlipay) return 'alipay';
+      const exactCredit = /クレジットカード|credit\s*card/i.test(value) || (billingOption && /CREDIT/i.test(el.value || ''));
+      if ((el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && exactCredit) return 'credit-card';
+      const exactConvenience = /コンビニ|convenience/i.test(value) || (billingOption && /CONVENIENCE/i.test(el.value || ''));
+      if ((el.getAttribute('type') === 'radio' || el.getAttribute('role') === 'radio') && exactConvenience) return 'convenience-store';
+      return 'unknown';
     }).filter(Boolean);
-    return evidence.length === 1 && evidence[0] === 'alipay' ? 'alipay' : null;
+    return evidence.length === 1 && ['alipay', 'credit-card', 'convenience-store'].includes(evidence[0]) ? evidence[0] : null;
   }
   function selectionControl(intent) {
     if (!intent) return null;
@@ -126,9 +131,9 @@
       ['model', l => D.compact(l).startsWith(D.compact(intent.product.Model)) && !(/promax/.test(D.compact(l)) && !/promax/.test(D.compact(intent.product.Model)))],
       ['color', l => D.compact(l).replace(/冰川蓝色/g,'冰川蓝') === D.compact(intent.product.Color).replace(/冰川蓝色/g,'冰川蓝')],
       ['capacity', l => new RegExp(`^${intent.product.Capacity.replace(/(GB|TB)/, '\\s*$1')}\\b`, 'i').test(l)],
-      ['tradein', l => /^(?:不折抵换购|不折抵|不使用折抵换购|不，无需折抵|无需折抵)$/.test(l)],
-      ['payment', l => /^(?:全额付款|一次性付款|全额支付)(?:\s|$)/.test(l)],
-      ['applecare', l => /^(?:不加购 AppleCare\+ 服务计划|不购买 AppleCare\+ 服务计划|不添加 AppleCare\+|不添加 AppleCare\+ 服务计划|无需 AppleCare\+ 服务计划|不购买保障服务|不加购保障服务|无需保障服务)$/.test(l)]
+      ['tradein', l => /^(?:不折抵换购|不折抵|不使用折抵换购|不，无需折抵|无需折抵|下取りを利用しない|下取りなし|利用しない)$/.test(l)],
+      ['payment', l => /^(?:全额付款|一次性付款|全额支付|一括払い|全額支払い)(?:\s|$)/.test(l)],
+      ['applecare', l => /^(?:不加购 AppleCare\+ 服务计划|不购买 AppleCare\+ 服务计划|不添加 AppleCare\+|不添加 AppleCare\+ 服务计划|无需 AppleCare\+ 服务计划|不购买保障服务|不加购保障服务|无需保障服务|AppleCare\+ なし|追加しない|保証なし)$/.test(l)]
     ];
     for (const [field, match] of goals) {
       const found = radios.filter(el => match(label(el)));
@@ -147,24 +152,24 @@
     if (currentStage === 'PRODUCT') {
       const choice = selectionControl(binding?.intent);
       if (choice) result.push({kind:'select-product', field:choice.field});
-      if (exactControl(['添加到购物袋','加入购物袋'], ['add-to-cart','add-to-bag','addToBag'])) result.push({kind:'add-to-bag'});
-      if (exactControl(['查看购物袋','前往购物袋','查看我的购物袋'], ['review-bag','reviewBag','bag-overlay-review-bag','proceed-to-checkout'])) result.push({kind:'open-bag'});
+      if (exactControl(['添加到购物袋','加入购物袋','バッグに追加','バッグに入れる'], ['add-to-cart','add-to-bag','addToBag'])) result.push({kind:'add-to-bag'});
+      if (exactControl(['查看购物袋','前往购物袋','查看我的购物袋','バッグを確認','バッグを見る'], ['review-bag','reviewBag','bag-overlay-review-bag','proceed-to-checkout'])) result.push({kind:'open-bag'});
     }
     if (currentStage === 'BAG') {
-      if (exactControl(['结账','前往结账'], ['bag-checkout-button','checkout'])) result.push({kind:'checkout'});
+      if (exactControl(['结账','前往结账','注文手続きへ','ご注文手続きへ','チェックアウト'], ['bag-checkout-button','checkout'])) result.push({kind:'checkout'});
       if (editControl(binding?.intent, items)) result.push({kind:'edit-variant'});
     }
     if (currentStage === 'CHECKOUT') {
-      const guestButton = exactControl(['以访客身份结账','作为访客继续','以访客身份继续','访客结账','继续作为访客','继续以访客身份结账','无需登录直接结账','以访客身份购买'], ['guest-checkout-button','guestLogin-guestCheckout','signIn-guestCheckout','guestCheckout']);
+      const guestButton = exactControl(['以访客身份结账','作为访客继续','以访客身份继续','访客结账','继续作为访客','继续以访客身份结账','无需登录直接结账','以访客身份购买','ゲストとして続ける','ゲスト購入','登録せずに続ける'], ['guest-checkout-button','guestLogin-guestCheckout','signIn-guestCheckout','guestCheckout']);
       if (guestButton) result.push({kind:'guest-checkout'});
       if (binding?.intent.fulfillment === 'pickup') {
         if (pickup?.canAct && !pickup.issues.length) result.push({kind:'pickup-step'});
       } else {
-        if (exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款','继续付款'], ['shipping-continue-button','shipping-address-continue-button','continue-button-label'])) result.push({kind:'continue-shipping'});
-        if (exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单','继续前往查看订单'], ['review-order-button','billing-continue-button','continue-button-review'])) result.push({kind:'continue-billing'});
+        if (exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款','继续付款','配送先情報を入力','お支払い方法へ進む'], ['shipping-continue-button','shipping-address-continue-button','continue-button-label'])) result.push({kind:'continue-shipping'});
+        if (exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单','继续前往查看订单','注文を確認','ご注文の確認'], ['review-order-button','billing-continue-button','continue-button-review'])) result.push({kind:'continue-billing'});
       }
     }
-    if (currentStage === 'REVIEW' && exactControl(['立即下单'], ['place-order','place-order-button','continue-button-placeOrder'])) result.push({kind:'submit-order'});
+    if (currentStage === 'REVIEW' && exactControl(['立即下单','注文を確定する','ご注文を確定する'], ['place-order','place-order-button','continue-button-placeOrder'])) result.push({kind:'submit-order'});
     return result;
   }
   function snapshot() {
@@ -172,8 +177,8 @@
     const body = text(document.body);
     const pickup = binding?.intent.fulfillment === 'pickup' ? pickupAdapter?.observe(binding.intent) : null;
     const product = items.length === 1 ? items[0].product : selectedProduct();
-    const orderNumber = body.match(/(?:订单号|订单编号)\s*[:：]?\s*(W\d{8,})\b/i)?.[1];
-    const unpaid = /(?:等待付款|待付款|尚未付款|未付款|请完成付款|立即付款)/.test(body);
+    const orderNumber = body.match(/(?:订单号|订单编号|ご注文番号|注文番号)\s*[:：]?\s*(W\d{8,})\b/i)?.[1];
+    const unpaid = /(?:等待付款|待付款|尚未付款|未付款|请完成付款|立即付款|お支払い)/.test(body);
     const issues = [...(pickup?.issues || [])];
     if (binding?.intent.fulfillment === 'pickup' && !pickupAdapter) issues.push('pickup-adapter-unavailable');
     if (all('[role="alert"],[data-autom="error-message"],.form-message-error,.rs-form-error,.rs-error-message').filter(visible).some(el => text(el))) issues.push('visible-form-error');
@@ -185,11 +190,11 @@
     const observedQuantity = items.length === 1 ? items[0].quantity : unobservedCart ? quantity(document.body) : null;
     const quantityEvidence = /(?:数量|Quantity)\s*[:：]?\s*\d+\b/i.test(body);
     return {stage:currentStage, product, ...(!unobservedCart ? {cartItems:items} : {}), ...(currentStage === 'BAG' ? {bagEmpty} : {}), ...(explicitOutOfStock ? {stockAvailable:false} : {}), ...(!unobservedCart || observedQuantity !== null || quantityEvidence ? {quantity:observedQuantity} : {}),
-      total:total(),currency: /(?:RMB|CNY|[¥￥])/.test(body) ? 'CNY' : null,
-      fulfillment: pickup && (pickup.pickupStoreNumber || pickup.pickupStoreName || /(?:取货详情|取货联系人|取货门店|取货地点)/.test(body)) ? 'pickup' : /(?:送货详情|送货地址|配送地址|邮寄到|送货到)/.test(body) && !/(?:取货详情|取货联系人)/.test(body) ? 'delivery' : null,
+      total:total(),currency: /(?:RMB|CNY|[¥￥]|円)/.test(body) ? (binding?.intent?.areaCode === 'jp' ? 'JPY' : 'CNY') : null,
+      fulfillment: pickup && (pickup.pickupStoreNumber || pickup.pickupStoreName || /(?:取货详情|取货联系人|取货门店|取货地点|受取詳細|受取場所|店舗受取)/.test(body)) ? 'pickup' : /(?:送货详情|送货地址|配送地址|邮寄到|送货到|お届け先|配送先)/.test(body) && !/(?:取货详情|取货联系人|受取詳細)/.test(body) ? 'delivery' : null,
       ...(pickup ? {checkoutStep:pickup.checkoutStep, pickupProgress:pickup.pickupProgress, pickupStoreNumber:pickup.pickupStoreNumber, pickupStoreName:pickup.pickupStoreName} : {}),
       paymentMethod: paymentMethod(),
-      termsPresent: D.salesTermsPresent(body,termsLinks) && /(?:立即下单|下订单)/.test(body),
+      termsPresent: D.salesTermsPresent(body,termsLinks) && /(?:立即下单|下订单|注文を確定する)/.test(body),
       ...(orderNumber ? {orderNumber,unpaid,receiptVerified:unpaid && items.length === 1 && !!product && total() !== null} : {}),
       controls:controls(currentStage,items,pickup),issues};
   }
@@ -215,27 +220,27 @@
     }
     if (kind === 'add-to-bag') {
       if (!D.sameProduct(s.product,binding.intent.product) || selectionControl(binding.intent)) throw new Error('product-not-ready');
-      safeClick(exactControl(['添加到购物袋','加入购物袋'],['add-to-cart','add-to-bag','addToBag'])); return;
+      safeClick(exactControl(['添加到购物袋','加入购物袋','バッグに追加','バッグに入れる'],['add-to-cart','add-to-bag','addToBag'])); return;
     }
     if (kind === 'open-bag') {
-      safeClick(exactControl(['查看购物袋','前往购物袋','查看我的购物袋'],['review-bag','reviewBag','bag-overlay-review-bag','proceed-to-checkout'])); return;
+      safeClick(exactControl(['查看购物袋','前往购物袋','查看我的购物袋','バッグを確認','バッグを見る'],['review-bag','reviewBag','bag-overlay-review-bag','proceed-to-checkout'])); return;
     }
     if (kind === 'guest-checkout') {
-      safeClick(exactControl(['以访客身份结账','作为访客继续','以访客身份继续','访客结账','继续作为访客','继续以访客身份结账','无需登录直接结账','以访客身份购买'],['guest-checkout-button','guestLogin-guestCheckout','signIn-guestCheckout','guestCheckout'])); return;
+      safeClick(exactControl(['以访客身份结账','作为访客继续','以访客身份继续','访客结账','继续作为访客','继续以访客身份结账','无需登录直接结账','以访客身份购买','ゲストとして続ける','ゲスト購入','登録せずに続ける'],['guest-checkout-button','guestLogin-guestCheckout','signIn-guestCheckout','guestCheckout'])); return;
     }
     if (kind === 'edit-variant') { safeClick(editControl(binding.intent,s.cartItems)); return; }
-    if (kind === 'checkout') { assertCart(s); safeClick(exactControl(['结账','前往结账'],['bag-checkout-button','checkout'])); return; }
+    if (kind === 'checkout') { assertCart(s); safeClick(exactControl(['结账','前往结账','注文手続きへ','ご注文手続きへ','チェックアウト'],['bag-checkout-button','checkout'])); return; }
     if (kind === 'continue-shipping') {
       if (s.issues.length) throw new Error('form-not-ready');
-      safeClick(exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款','继续付款'],['shipping-continue-button','shipping-address-continue-button','continue-button-label'])); return;
+      safeClick(exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款','继续付款','配送先情報を入力','お支払い方法へ進む'],['shipping-continue-button','shipping-address-continue-button','continue-button-label'])); return;
     }
     if (kind === 'continue-billing') {
       if(s.issues.length)throw new Error('form-not-ready');
-      safeClick(exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单','继续前往查看订单'],['review-order-button','billing-continue-button','continue-button-review'])); return;
+      safeClick(exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单','继续前往查看订单','注文を確認','ご注文の確認'],['review-order-button','billing-continue-button','continue-button-review'])); return;
     }
     if (kind === 'submit-order') {
       const failures=D.validateFinal(snapshot(),binding.intent); if(failures.length)throw new Error(failures.join(','));
-      safeClick(exactControl(['立即下单'],['place-order','place-order-button','continue-button-placeOrder'])); return;
+      safeClick(exactControl(['立即下单','注文を確定する','ご注文を確定する'],['place-order','place-order-button','continue-button-placeOrder'])); return;
     }
     throw new Error('unsupported-action');
   }

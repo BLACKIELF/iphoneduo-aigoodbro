@@ -9,8 +9,9 @@
     try {
       const url = new URL(window.location.href);
       const path = decodeURIComponent(url.pathname);
-      return window.top === window && url.origin === 'https://www.apple.com.cn' && !url.username && !url.password &&
-        /^\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path) &&
+      const isCn = url.origin === 'https://www.apple.com.cn' && /^\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
+      const isJp = url.origin === 'https://www.apple.com' && /^\/jp\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
+      return window.top === window && (isCn || isJp) && !url.username && !url.password &&
         !/\/(?:bag|checkout|signin|account|orders?|secure)(?:\/|$)/i.test(path);
     } catch { return false; }
   }

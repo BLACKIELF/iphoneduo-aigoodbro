@@ -48,6 +48,7 @@ function fulfillmentFields() {
   render();
 }
 function purchaseRequest(trial = false) {
+  const areaCode = $('area')?.value || 'cn';
   const product = products.find(p => p.Model === $('model').value && p.Capacity === $('capacity').value && p.Color === $('color').value);
   const maxTotal = Number($('budget').value);
   if (!product || !Number.isFinite(maxTotal) || maxTotal <= 0) throw new Error('请选择商品并填写金额上限。');
@@ -57,11 +58,12 @@ function purchaseRequest(trial = false) {
     const store = stores.find(s => s.StoreNumber === $('store').value);
     const address = $('address').value.trim();
     if (!store || !address) throw new Error('请选择唯一自提门店并填写其公开区县或地址。');
-    pickup = { storeNumber: store.StoreNumber, storeName: store.CityStoreName.split('-').slice(1).join('-').trim(),
-      region: { state: store.Province, city: store.City, address }, slotPolicy: 'earliest' };
+    const storeName = store.CityStoreName ? store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName : (store.StoreName || '');
+    pickup = { storeNumber: store.StoreNumber, storeName,
+      region: { state: store.Province || store.City || '', city: store.City || store.Province || '', address }, slotPolicy: 'earliest' };
   }
   const allowSubmit = !trial && $('submit').checked;
-  return { intent: { product, areaCode: 'cn', fulfillment, quantity: 1, maxTotal,
+  return { intent: { product, areaCode, fulfillment, quantity: 1, maxTotal,
     entryMode: $('entry').value, runMode: allowSubmit ? 'submit' : 'review', allowSubmit,
     acknowledgedTerms: $('terms').checked, ...(pickup ? { pickup } : {}) },
     allowReplaceVariant: $('replace').checked, newIntentAcknowledged: $('new').checked };
@@ -77,26 +79,37 @@ async function startPurchase(trial = false, armed = false) {
       const state = await chrome.runtime.sendMessage({ type: 'get-backend-state' });
       if (epoch !== operationEpoch) return;
       if (!state?.ok || !state.monitoring) throw new Error('请先启动相同商品和门店的 Java 库存监控。');
-      const matches = state.tasks.filter(t => t.areaCode === 'cn' && t.store?.StoreNumber === request.intent.pickup.storeNumber && t.product?.Code === request.intent.product.Code);
+      const matches = state.tasks.filter(t => t.areaCode === request.intent.areaCode && t.store?.StoreNumber === request.intent.pickup.storeNumber && t.product?.Code === request.intent.product.Code);
       if (matches.length !== 1) throw new Error('需要且只能有一个相同商品与门店的监控任务。');
       request.taskId = matches[0].id;
-      request.identity = `cn:${request.intent.pickup.storeNumber}:${request.intent.product.Code}`;
+      request.identity = `${request.intent.areaCode}:${request.intent.pickup.storeNumber}:${request.intent.product.Code}`;
     }
     if (epoch !== operationEpoch) return;
     await command(armed ? 'checkout-arm' : 'checkout-start', request, epoch);
   } catch (error) { if (epoch === operationEpoch) $('message').textContent = error.message; }
   finally { if (epoch === operationEpoch) { busy = false; render(); } }
 }
-async function initialize() {
-  const [data, storeData] = await Promise.all(['data/products/product_data_cn.json', 'data/stores/store_cn.json'].map(async path => {
+async function loadCatalog(areaCode = 'cn') {
+  const [data, storeData] = await Promise.all([`data/products/product_data_${areaCode}.json`, `data/stores/store_${areaCode}.json`].map(async path => {
     const response = await fetch(chrome.runtime.getURL(path));
     if (!response.ok) throw new Error('商品或门店目录未加载，请重新加载扩展。');
     return response.json();
   }));
   products = Object.values(data.products).flat().filter(p => /^iPhone/.test(p.Model));
-  stores = storeData.stores;
-  $('store').replaceChildren(...stores.map(store => Object.assign(document.createElement('option'), { value: store.StoreNumber, textContent: store.CityStoreName })));
-  options($('model'), products.map(p => p.Model), 'iPhone 18 Pro'); capacities();
+  stores = storeData.stores || [];
+  $('store').replaceChildren(...stores.map(store => Object.assign(document.createElement('option'), { value: store.StoreNumber, textContent: store.CityStoreName || store.StoreName })));
+  const defaultModel = products[0]?.Model || 'iPhone 18 Pro';
+  options($('model'), products.map(p => p.Model), defaultModel);
+  capacities();
+  if ($('budget')) {
+    $('budget').placeholder = areaCode === 'jp' ? '请填写本次订单最高金额（JPY，如 200000）' : '请填写本次订单最高金额（元，如 10000）';
+  }
+}
+async function initialize() {
+  await loadCatalog($('area')?.value || 'cn');
+  if ($('area')) {
+    $('area').addEventListener('change', () => loadCatalog($('area').value).catch(error => { $('message').textContent = error.message; }));
+  }
   $('model').addEventListener('change', capacities); $('capacity').addEventListener('change', colors);
   $('store').addEventListener('change', () => { $('address').value = ''; });
   $('fulfillment').addEventListener('change', fulfillmentFields); $('entry').addEventListener('change', fulfillmentFields);

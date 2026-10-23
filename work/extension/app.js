@@ -302,20 +302,21 @@ async function directToOrder(task) {
   if (operationPending) return;
   setFormMessage(`正在为「${task.product.Model} · ${task.product.Color}」启动直达下单…`, false);
   try {
+    const isJp = task.areaCode === "jp";
     const store = task.store;
-    const address = store?.City || store?.Province || "浦东新区";
+    const address = store?.City || store?.Province || (isJp ? "Tokyo" : "浦东新区");
     const pickup = {
       storeNumber: store.StoreNumber,
-      storeName: store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName,
-      region: { state: store.Province || store.City || '上海市', city: store.City || store.Province || '上海市', address },
+      storeName: store.CityStoreName ? store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName : (store.StoreName || ''),
+      region: { state: store.Province || store.City || (isJp ? 'Tokyo' : '上海市'), city: store.City || store.Province || (isJp ? 'Tokyo' : '上海市'), address },
       slotPolicy: 'earliest'
     };
     const intent = {
       product: task.product,
-      areaCode: 'cn',
+      areaCode: task.areaCode || 'cn',
       fulfillment: 'pickup',
       quantity: 1,
-      maxTotal: 30000,
+      maxTotal: isJp ? 500000 : 30000,
       entryMode: 'product',
       runMode: 'review',
       allowSubmit: false,
@@ -404,7 +405,7 @@ function renderTasks() {
     removeButton.disabled = !backendConnected || operationPending;
     removeButton.addEventListener("click", () => removeTask(task.id));
     actions.append(openButton, removeButton);
-    if (task.areaCode === "cn") {
+    if (["cn", "jp"].includes(task.areaCode)) {
       const directOrderBtn = document.createElement("button");
       directOrderBtn.type = "button";
       directOrderBtn.textContent = "直达下单";
@@ -416,7 +417,7 @@ function renderTasks() {
       const pageCheck = document.createElement("button");
       pageCheck.type = "button";
       pageCheck.textContent = "官网页查库存";
-      pageCheck.title = "仅使用已经打开的中国大陆官网商品页查询一次；需要先在官网完成验证";
+      pageCheck.title = "仅使用已经打开的官网商品页查询一次；需要先在官网完成验证";
       pageCheck.disabled = inventoryQueryPending || operationPending;
       pageCheck.addEventListener("click", () => queryOfficialPage(task));
       actions.append(pageCheck);

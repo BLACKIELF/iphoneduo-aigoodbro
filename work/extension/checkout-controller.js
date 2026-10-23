@@ -7,8 +7,15 @@ const HALTED = new Set(['CANCELLED', 'BLOCKED', 'WAITING_FOR_IDENTITY', 'READY_T
 export function isCheckoutURL(raw) {
   try {
     const url = new URL(raw);
-    return url.protocol === 'https:' && ['www.apple.com.cn', 'secure6.www.apple.com.cn'].includes(url.hostname) && url.pathname.startsWith('/shop/');
+    const isCn = ['www.apple.com.cn', 'secure6.www.apple.com.cn'].includes(url.hostname);
+    const isJp = ['www.apple.com', 'secure6.www.apple.com'].includes(url.hostname) && /^\/jp(?:\/|$)/.test(url.pathname);
+    const path = url.pathname.replace(/^\/jp/, '');
+    return url.protocol === 'https:' && (isCn || isJp) && path.startsWith('/shop/');
   } catch { return false; }
+}
+
+function bagURL(areaCode) {
+  return areaCode === 'jp' ? 'https://www.apple.com/jp/shop/bag' : 'https://www.apple.com.cn/shop/bag';
 }
 
 export function createCheckoutController(api) {
@@ -203,7 +210,7 @@ export function createCheckoutController(api) {
         log(run, '已创建单次购买任务，先检查购物袋。'); await save(run);
         if (stopPending || startEpoch !== cancellationEpoch) return { ok: false, error: '启动已被停止请求取消。', run };
         stopPending = false;
-        const tab = await api.tabs.create({ url: 'https://www.apple.com.cn/shop/bag', active: true });
+        const tab = await api.tabs.create({ url: bagURL(state.intent.areaCode), active: true });
         run.tabId = tab.id; await save(run);
         await api.alarms?.create('checkout-pulse', { periodInMinutes: 0.5 }); wake(700);
         return { ok: true, run };
@@ -230,7 +237,7 @@ export function createCheckoutController(api) {
         run.state.status = 'RUNNING'; run.pendingAction = null; run.noActionSince = null; run.connectionFailures = 0; run.connectionFailureSince = null;
         log(run, '继续当前任务，重新核对页面。'); await save(run);
         if (stopPending || resumeEpoch !== cancellationEpoch) return { ok: false, error: '继续操作已被停止请求取消。', run };
-        if (uncertainBag) await api.tabs.update(run.tabId, { url: 'https://www.apple.com.cn/shop/bag' });
+        if (uncertainBag) await api.tabs.update(run.tabId, { url: bagURL(run.state.intent.areaCode) });
         wake(); return { ok: true, run };
       }
       return { ok: false, error: '未知购买操作。' };
@@ -285,7 +292,7 @@ export function createCheckoutController(api) {
       };
       if (expired()) return stopExpired();
       try {
-        const tab = await api.tabs.create({ url: 'https://www.apple.com.cn/shop/bag', active: true });
+        const tab = await api.tabs.create({ url: bagURL(run.state.intent.areaCode), active: true });
         run.tabId = tab.id; await save(run);
         if (cancelled()) return stopTriggered();
         if (expired()) return stopExpired();
