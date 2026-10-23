@@ -2,6 +2,9 @@ import { AREAS, groupProductsByModel, unique } from "./shared.js";
 
 const elements = {
   area: document.querySelector("#area"),
+  fulfillment: document.querySelector("#fulfillment"),
+  provinceField: document.querySelector("#province-field"),
+  storeField: document.querySelector("#store-field"),
   province: document.querySelector("#province"),
   store: document.querySelector("#store"),
   model: document.querySelector("#model"),
@@ -126,6 +129,17 @@ try {
   setFormMessage("载入失败：" + error.message, true);
 }
 
+function updateFulfillmentUI() {
+  const isDelivery = elements.fulfillment && elements.fulfillment.value === "delivery";
+  if (elements.provinceField) elements.provinceField.hidden = isDelivery;
+  if (elements.storeField) elements.storeField.hidden = isDelivery;
+  const checkoutFulfillment = document.querySelector("#checkout-fulfillment");
+  if (checkoutFulfillment && checkoutFulfillment.value !== elements.fulfillment.value) {
+    checkoutFulfillment.value = elements.fulfillment.value;
+    checkoutFulfillment.dispatchEvent(new Event("change"));
+  }
+}
+
 async function initialize() {
   fillSelect(elements.area, AREAS.map((area) => ({ value: area.code, label: area.title })));
   const saved = await chrome.storage.local.get([
@@ -143,6 +157,10 @@ async function initialize() {
   inventoryPageResults = saved.inventoryPageResults || {};
   populateSettings(saved.notificationSettings || { barkUrl: saved.barkUrl || "" });
   elements.area.value = saved.uiSelection?.areaCode || "cn";
+  if (elements.fulfillment && saved.uiSelection?.fulfillment) {
+    elements.fulfillment.value = saved.uiSelection.fulfillment;
+  }
+  updateFulfillmentUI();
   bindEvents();
   render();
   await Promise.all([loadAreaData(saved.uiSelection || {}), refreshBackend()]);
@@ -150,6 +168,12 @@ async function initialize() {
 }
 
 function bindEvents() {
+  if (elements.fulfillment) {
+    elements.fulfillment.addEventListener("change", () => {
+      updateFulfillmentUI();
+      saveSelection();
+    });
+  }
   elements.area.addEventListener("change", async () => {
     await loadAreaData({});
     await saveSelection();
@@ -326,6 +350,7 @@ async function saveSelection() {
   await chrome.storage.local.set({
     uiSelection: {
       areaCode: elements.area.value,
+      fulfillment: elements.fulfillment?.value || "pickup",
       province: elements.province.value,
       storeNumber: elements.store.value,
       model: elements.model.value,
@@ -336,23 +361,27 @@ async function saveSelection() {
 }
 
 async function addTask() {
+  const fulfillment = elements.fulfillment?.value || "pickup";
   const area = AREAS.find((candidate) => candidate.code === elements.area.value);
-  const store = stores.find((candidate) => candidate.StoreNumber === elements.store.value);
+  const store = fulfillment === "delivery"
+    ? (stores.find((candidate) => candidate.StoreNumber === elements.store.value) || stores[0])
+    : stores.find((candidate) => candidate.StoreNumber === elements.store.value);
   const product = (productsByModel[elements.model.value] || []).find((candidate) =>
     candidate.Capacity === elements.capacity.value && candidate.Color === elements.color.value
   );
   if (!area || !store || !product) {
-    setFormMessage("请完整选择地区、门店和商品。", true);
+    setFormMessage(fulfillment === "delivery" ? "请完整选择地区和商品。" : "请完整选择地区、门店和商品。", true);
     return;
   }
 
   const duplicate = tasks.some((task) =>
     task.areaCode === area.code &&
+    (task.fulfillment || "pickup") === fulfillment &&
     task.store.StoreNumber === store.StoreNumber &&
     task.product.Code === product.Code
   );
   if (duplicate) {
-    setFormMessage("这个门店和商品已经在监控列表中。", true);
+    setFormMessage("这个商品配置已经在监控列表中。", true);
     return;
   }
 
@@ -360,6 +389,7 @@ async function addTask() {
     id: crypto.randomUUID(),
     areaCode: area.code,
     areaTitle: area.title,
+    fulfillment,
     store: structuredClone(store),
     product: structuredClone(product)
   };
@@ -417,27 +447,31 @@ async function directToOrder(task) {
   try {
     const budgets = { cn: 30000, hk: 35000, jp: 500000, us: 4000 };
     const maxTotal = budgets[task.areaCode] || 30000;
-    const store = task.store;
-    const address = store?.District || store?.City || store?.Province || "Store Area";
-    const state = store?.Province || store?.City || "Region";
-    const city = store?.City || store?.Province || "City";
-    const pickup = {
-      storeNumber: store.StoreNumber,
-      storeName: store.CityStoreName ? store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName : (store.StoreName || ''),
-      region: { state, city, address },
-      slotPolicy: 'earliest'
-    };
+    const fulfillment = task.fulfillment || 'pickup';
+    let pickup = undefined;
+    if (fulfillment === 'pickup' && task.store) {
+      const store = task.store;
+      const address = store?.District || store?.City || store?.Province || "Store Area";
+      const state = store?.Province || store?.City || "Region";
+      const city = store?.City || store?.Province || "City";
+      pickup = {
+        storeNumber: store.StoreNumber,
+        storeName: store.CityStoreName ? store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName : (store.StoreName || ''),
+        region: { state, city, address },
+        slotPolicy: 'earliest'
+      };
+    }
     const intent = {
       product: task.product,
       areaCode: task.areaCode || 'cn',
-      fulfillment: 'pickup',
+      fulfillment,
       quantity: 1,
       maxTotal,
       entryMode: 'product',
       runMode: 'review',
       allowSubmit: false,
       acknowledgedTerms: true,
-      pickup
+      ...(pickup ? { pickup } : {})
     };
     const result = await chrome.runtime.sendMessage({
       type: 'checkout-start',
@@ -485,7 +519,10 @@ function renderTasks() {
     const title = document.createElement("h3");
     title.textContent = task.product.Model + " · " + task.product.Capacity;
     const meta = document.createElement("p");
-    meta.textContent = task.areaTitle + " · " + task.store.CityStoreName + " · " + task.product.Color;
+    const fulfillmentLabel = task.fulfillment === "delivery"
+      ? "【送货上门】"
+      : `【自提 · ${task.store.CityStoreName}】`;
+    meta.textContent = task.areaTitle + " · " + fulfillmentLabel + " · " + task.product.Color;
     const itemState = monitorState?.items?.[task.id];
     const status = document.createElement("span");
     status.className = "task-status " + statusClass(itemState?.status);

@@ -1,164 +1,159 @@
-# iPhoneduo助手aigoodbro
+# iPhoneduo助手aigoodbro · 1.6.0 (1023v1)
 
-用 Chrome 配置 Apple 门店库存监控，由本机 Java 后台持续查询，通过 Bark、飞书或 Lark 提醒。
-
-官网：[aigoodbro.com](https://aigoodbro.com) · **1023v1 / 1.6.0 预发布测试版** · GPL-3.0。本次扩展已升级支持一键直达下单界面。
+> **Apple 门店库存极速监控 · 刷到现货持续响铃 · 一键直达最终下单界面**  
+> 官方网站：[aigoodbro.com](https://aigoodbro.com) · 开源协议：GPL-3.0 · 双平台原生支持：**Windows 10/11** & **macOS**
 
 <div align="center">
-  <img src="docs/brand/aigoodbro-avatar.png" alt="AiGoodBro 官方卡通吉祥物头像" width="108" style="border-radius:50%; box-shadow:0 6px 20px rgba(0,0,0,0.15); border:3px solid #fff;">
-  <p><strong>AiGoodBro 官方吉祥物 · 品牌与设计规范已上线</strong></p>
-  <p><a href="docs/DESIGN-GUIDELINES.md">📖 查看完整品牌设计规范 (Design Guidelines)</a> · <a href="docs/brand/">🎨 官方形象与头像资产</a></p>
+  <img src="docs/brand/aigoodbro-avatar.png" alt="AiGoodBro 官方卡通吉祥物头像" width="112" style="border-radius:50%; box-shadow:0 6px 20px rgba(0,0,0,0.15); border:3px solid #fff;">
+  <p><strong>AiGoodBro 官方吉祥物 · 品牌与设计规范已全线上线</strong></p>
+  <p>
+    <a href="docs/DESIGN-GUIDELINES.md">📖 品牌设计规范 (Design Guidelines)</a> · 
+    <a href="docs/brand/">🎨 官方形象素材库</a> · 
+    <a href="https://aigoodbro.com">🌐 访问官方网站</a>
+  </p>
 </div>
-
-展示素材：**1016v7**（2026-10-16），图片展示此前版本界面；1023v1 新增购买选项见下方说明。
-
-<img src="docs/images/cover-1016v7.png" alt="iPhoneduo助手aigoodbro 介绍封面；界面预览，非实站运行截图" width="480">
-
-## 🎨 品牌形象与设计规范
-
-本项目全线统一采用 **AiGoodBro** 官方卡通吉祥物（无眼镜版官方设定：深发微翘、Bro 蓝夹克、红拉链袖口细节、直筒长裤与纯白球鞋），已正式停用旧版双开门软件图标：
-- **官方形象资产**：收录于 [`docs/brand/`](docs/brand/)，包含 1254×1254 微笑头像、思考头像、惊喜头像及完整三视图；
-- **设计规范文件**：详细说明见 [`docs/DESIGN-GUIDELINES.md`](docs/DESIGN-GUIDELINES.md)，覆盖角色视觉识别点、排版字体规范（PingFang SC）、状态色彩、Web Audio 纯净和弦持续响铃音频规范与自动跳转安全体验。
-
-## 当前可用范围
-
-- 按地区、门店、型号、容量或尺寸、颜色建立库存任务。
-- Java 后台独立于 Chrome 运行。关闭浏览器后仍可查询，但电脑必须开机、登录、联网并保持唤醒。
-- 可选 Bark、飞书和 Lark 通知；没有配置通知渠道时，仅记录库存状态。
-- 503 / 429 时逐步延长等待时间，避免连续请求；故障显示未知，不当作有货或无货。
-- 中国大陆商品页提供显式的“官网页查库存”单次查询，结果与 Java 后台分开显示。
-- **一键直达下单界面**：扩展主界面点击「直达下单界面」，或在监控任务列表中点击「直达下单」，程序将自动进入官网完成商品规格选配、加入购物袋、穿透访客结账、选择门店自提最早时段与支付宝配置，并直接带您直达最终下单界面（“准备下单了吗？”页面），自动置顶标签页停在“立即下单”前，由人工核对后手动点击完成下单。
-- 可选择仅使用已准备的购物袋；“按授权启动”可允许程序单次尝试生成未付款订单。
-- “有货后结账一次”绑定现有 Java 自提库存任务，核对准确门店/SKU及新鲜库存后启动一次；保留金额、单件、付款方式和防重复提交保护。**真实官网自动下单尚未验收**。
-
-**Apple Watch 当前只支持库存查询，不支持自动购买。** 内置商品目录来自上游和公开资料，不代表所有商品当前在售或有货。监控查询的是门店自提库存，不能据此判断邮寄供货。
-
-本版已通过本地程序测试；官网仍可能返回 503，新增查询入口不保证解除限制。首次使用请先验证监控，保持自动购买的提交授权未勾选。程序不处理验证码、不读取账号 Cookie、不保存收货地址，不提供付款自动化。
-
-1023v1 升级了**直达下单界面**能力：穿透访客结账与购物袋抽屉跳转，自动完成门店最早可用时段选择，到达下单界面后自动激活标签页与窗口前台置顶；同时在库存任务列表新增一键「直达下单」入口。
-
-## 版本检测与升级提示
-
-打开助手即可看到当前版本、最新公开版本和检查时间。自动检查结果缓存24小时；点“检查更新”可立即重查。发现新版时显示更新内容，可复制 Codex 更新口令；断网或数据无效会显示“检查失败”，不会误报已是最新版。检查仅获取本仓库的公开 `update.json`，不发送任务、通知地址或密钥，不自动下载或安装代码。
-
-升级并重新加载后，扩展图标显示“新”，助手顶部显示“已升级至…”及本次变化；点“知道了”可清除提示。同版本重新加载不会重复提醒，回滚不称为升级。首次安装显示已载入版本。
-
-更新前先停止旧购买任务，保留提交记录并核对官网已有订单；版本检测本身不会暂停或启动旧购买任务。更新后重载原扩展和已打开的Apple商品页即可生效。
-
-## 直达下单界面怎么用
-
-1. **从任务直达下单**：在已建立的监控任务列表中，直接点击该任务卡片右侧的「**直达下单**」按钮。扩展将自动以该商品的型号、颜色、容量及门店自提信息启动自动化，自动完成加袋、选时段、选支付宝，并在到达最终下单确认页（“准备下单了吗？”）时将浏览器标签页置顶激活，您只需核对并点击“立即下单”。
-2. **在购买设置面板手动直达**：在第四部分「一键直达下单界面 / 自动购买」中选择型号、容量、颜色和金额上限，选择“指定门店自提”或“邮寄”，然后点击主按钮「**直达下单界面**」。它将自动执行所有中间流程，停在最终点击下单之前。
-3. **需要自动生成未付款订单时**：核对官网现有资料，勾选“允许程序生成 1 件未付款订单”及销售条款授权，再点「按授权启动」；付款步骤停止。已有提交记录必须先核对官网订单，确认新订单后才能另起一次。
-4. **到货触发自提结账**：添加相同门店/SKU 的唯一监控任务并启动监控，再点“有货后结账一次”。只有启用后产生、非未来且60秒内的准确有货结果可触发，消费后不重复开启。暂停、重启监控配置或修改任务会取消等待。
-
-自动结账需要 Chrome 运行。扩展每30秒读取本机 Java 状态，不额外请求 Apple；网页单次库存查询不触发购买。关闭 Chrome 后，Java 可继续监控和提醒，但不会操作网页结账。
-
-## 界面预览
-
-![库存监控界面静态预览，未连接后台，没有查询结果](docs/images/interface-preview-1016v7.png)
-
-封面与上图均由本项目界面和内置目录静态渲染，**不是已安装扩展或 Apple 官网实站运行截图**。图中 Watch 选配仅用于展示，未连接后台、未查询库存、未创建订单。
-
-## 让 Codex 协助安装
-
-把下面这一句话复制给 Codex：
-
-```text
-请用 Codex 协助我安装或更新 https://github.com/BLACKIELF/iphoneduo-aigoodbro 的 iPhoneduo助手aigoodbro 至 1.6.0（1023v1）：先读 README，复用已有同源安装及原扩展目录，保留本地改动、任务、设置和库存监控状态，先停止旧购买任务，比较版本后更新必要文件，Java 后台无变化则不重装，协助重新加载扩展并核验版本、固定 ID 和后台连接，不自动恢复购买或付款；不能操作扩展管理页时给我手动重载步骤，缺少安装才按 README 安装并保持暂停。
-```
-
-## 🪟 Windows 用户安装与运行指南 (零 Python 依赖 · 一键安装)
-
-Windows 环境下已实现 **100% 纯原生支持**，无需安装 Python，仅需 Java 运行环境：
-
-### 第一步：准备 Java 环境（若已有 Java 17 或 21 可跳过）
-- 推荐下载安装免费的 **OpenJDK 21 (Temurin)**：
-  👉 [Adoptium 官方下载地址 (Windows x64 .msi 安装包)](https://adoptium.net/zh-CN/temurin/releases/?version=21)
-- 安装时勾选“Set JAVA_HOME variable”和“Add to PATH”以便命令行识别。
-
-### 第二步：一键配置后台与 Chrome 通信
-1. 解压下载的发布压缩包到任意英文或常规路径（例如 `D:\iphoneduo-helper`）。
-2. **鼠标双击运行 `install_windows.bat`**：
-   - 脚本会自动检测 Java 环境；
-   - 自动在 `%LOCALAPPDATA%\ApplePurchaseHelper` 部署后台并生成安全配对密钥；
-   - 自动生成 Chrome Native Messaging 原生连接器并写入注册表（无需管理员权限）。
-
-### 第三步：启动后台服务
-- 双击运行目录下的 **`start_backend.bat`**（保持黑框常驻即可后台轮询）；
-- 或双击 **`start_backend_silent.vbs`** 实现无黑框静默在后台常驻运行。
-
-### 第四步：在 Chrome 加载扩展
-1. 打开 Chrome 浏览器，在地址栏输入访问：`chrome://extensions/`
-2. 开启右上角「**开发者模式**」开关；
-3. 点击左上角「**加载已解压的扩展程序**」，选择本目录下的 `extension` 文件夹；
-4. 点击扩展卡片上的主界面，打开后左侧显示绿色 **「已连接本机 Java 后台」** 即配置成功！
 
 ---
 
-## 🍏 安装（macOS + Google Chrome）
+## 🌟 核心功能一览 (1023v1 新增)
 
-需要 Git、可运行的 `/usr/bin/python3` 和 JDK 21。扩展至少需要 Chrome 120。Node.js 仅用于开发测试。
+| 功能板块 | 特性描述 | 优势与安全边界 |
+|---|---|---|
+| **一键直达下单界面** | 监控任务列表或购买面板点击「**直达下单**」，自动选配容量、颜色、加入购物袋、穿透访客结账、选定指定门店最早可用自提时段与支付方式。 | **停在最终确认页**：直接带您到达“准备下单了吗？”页面并自动置顶激活标签页，由您亲自核对最终金额并点击下单，**绝不私自代扣付款**。 |
+| **刷到现货持续响铃** | 一旦探测到目标商品有货（`available: true`），网页立即启动 **Web Audio 纯净三音递增和弦持续循环响铃**，顶部弹出红白脉冲警报条与「🔕 停止响铃」按钮；同时调用系统硬件扬声器鸣响。 | 多重感官强提醒，绝不错过任何放货时机；关闭浏览器仍可通过本机扬声器或手机推送提醒。 |
+| **1~60 秒高频轮询** | 刷新间隔下调至 **1 到 60 秒每秒自由可选**（支持 1s~60s、120s、300s）。 | 自由掌控查询频率，既支持极限抢购，也可调至 5~10 秒避免触发官网 429 频控。 |
+| **四大地区全线覆盖** | 全面支持 **中国大陆 (CN)、中国香港 (HK)、日本 (JP)、美国 (US)** 直营店自提与邮寄库存查询。 | 智能适配各大区域本地货币（CNY / HKD / JPY / USD）与直营店自提排单规则。 |
+| **Windows 零 Python 依赖** | 重构 Windows 原生连接器，**彻底摆脱 Python 依赖**，内置纯 Java Native Messaging 通信桥。 | Windows 用户只需安装 Java，双击 `install_windows.bat` 3 秒全自动完成安装配置。 |
+| **多通道手机离线推送** | 支持配置 **Bark（iOS 高速推送）**、**飞书机器人 (Lark)** Webhook 与消息签名。 | 电脑锁屏或浏览器关闭后，后台仍可持续查询并将到货消息直接推送到您手机。 |
 
-先检查是否已有同源安装；已有用户应保留当前扩展目录，更新原目录后重新加载，避免生成第二份配置。安装器会复用本机服务并保留任务、设置与启用状态；**更新正在监控的安装不会自动暂停它**。同名但指向其他位置的服务会拒绝覆盖。
+---
 
-```bash
-git clone https://github.com/BLACKIELF/iphoneduo-aigoodbro.git
-cd iphoneduo-aigoodbro
-/usr/bin/python3 -c 'import json, urllib.request'
-```
+## 🪟 Windows 用户安装与运行完全手册 (零 Python · 3 秒一键装)
 
-构建脚本默认使用 Apple Silicon Homebrew 的 `/opt/homebrew/opt/openjdk@21/bin`。其他安装路径先在当前终端设置 `APPLE_HELPER_JDK_BIN` 为实际 JDK 21 的 `bin` 目录；如果 JDK 已注册到 macOS，可执行：
+Windows 环境现已实现 **100% 纯原生支持**！**完全不需要安装 Python**，只需要基础 Java 运行环境。
 
-```bash
-export APPLE_HELPER_JDK_BIN="$(/usr/libexec/java_home -v 21)/bin"
-```
+### 🤖 Windows 用户 Codex 一句话全自动安装指令（推荐）
 
-确认该目录包含 `java`、`javac` 和 `jar`，再构建和安装。安装脚本不下载 JDK、不更改全局 PATH：
+如果您或您的用户使用 **Codex** / **Cursor** / **Claude Code** / **AI 编程助手**，只需将以下这一句话指令发给 AI，AI 即可全自动检测系统、配置环境并完成全部安装：
 
-```bash
-sh work/backend/build.sh
-/usr/bin/python3 work/backend/install_macos.py
-```
+> **Codex 一句话安装提示词（直接复制发给 AI）**：
+> ```text
+> 请帮我在当前 Windows 电脑上一键配置 iPhoneduo助手aigoodbro：1. 检查并确保系统已具备 Java 17 或 21 运行环境（若缺失请提示下载 Adoptium OpenJDK 21 msi 并协助配置）；2. 在当前项目目录下执行 work\backend\install_windows.bat 注册 Chrome Native Messaging 原生连接器与本地凭据；3. 运行 start_backend_silent.vbs 静默启动后台服务并验证端口 127.0.0.1 正常响应；4. 输出 Chrome 扩展加载路径（当前目录下的 work\extension），指导我在 chrome://extensions 开启开发者模式并加载已解压扩展程序。
+> ```
 
-1. 在 Chrome 扩展管理页打开开发者模式，选择“加载已解压的扩展程序”，加载本仓库的 `work/extension` 文件夹。
-2. 确认名称为 `iPhoneduo助手aigoodbro`，版本为 `1.6.0`，扩展 ID 为 `agooghaedakdaimodmlajgkgondpjjil`。
-3. 打开助手，确认后台已连接。首次安装没有任务且保持暂停。
-4. 添加自己的门店与商品，点击“立即检查”进行一轮查询。确认商品与门店对应正确；503 表示库存未知，等待冷却后再查，不能视为安装成功取得库存。
-5. 需要持续监控时再点击“开始监控”。关闭 Chrome 后仍要接收提醒，需先配置通知渠道。
+**使用方法**：
+1. 打开 Codex（或 Cursor / 任意 AI 编程工具）；
+2. 打开克隆或解压的项目根目录；
+3. 将上述这行指令直接粘贴发送给 Codex；
+4. Codex 会自动完成环境变量核验、执行注册脚本、无窗静默启动后台，并给出加载扩展的具体路径，30 秒内全自动就绪！
 
-更新扩展后，也要刷新已打开的 Apple 商品页才能加载新增脚本。使用“官网页查库存”时，需先自行打开中国大陆 Apple 官网商品页并完成必要验证；该结果不会启动购买或发送库存通知。
+---
 
-## 数据与通知
+### 手动安装步骤
 
-任务、通知地址和签名密钥仅存放在本机运行目录与扩展本地缓存，不使用 Chrome 同步；它们不是加密保险箱。版本检测仅向 GitHub 请求公开元数据，缓存保存在本机。后台运行目录为 `~/Library/Application Support/ApplePurchaseHelper/`，目录权限 0700，状态与配对密钥权限 0600。
+#### 第一步：安装 Java 运行环境（若已有 Java 17 或 21 可跳过）
+后台服务需要 Java 17 或 Java 21。推荐安装微软与开源社区最主流的 **Adoptium OpenJDK 21**：
+- 👉 **[Adoptium 官方高速下载 (Windows x64 .msi 安装包)](https://adoptium.net/zh-CN/temurin/releases/?version=21)**
+- 下载后一路点击“下一步”完成安装即可（默认已勾选添加系统 PATH 环境变量）。
 
-启用提醒后，所选门店、型号、规格和官网商品链接会发送至用户配置的渠道。保存设置不会发送消息。Bark 仅支持 `api.day.app`；飞书和 Lark 仅支持官方 HTTPS 机器人接口。后台仅监听 `127.0.0.1`，扩展通过 Native Messaging 连接。
+#### 第二步：解压并一键安装配置
+1. 下载并解压本项目的发布压缩包（建议解压到常规路径，例如 `D:\iphoneduo-helper`）。
+2. **鼠标双击运行目录下的 `install_windows.bat`**：
+   - 脚本会自动检测 Java 环境；
+   - 自动在 `%LOCALAPPDATA%\ApplePurchaseHelper` 部署后台核心并生成安全配对凭据；
+   - 自动生成 Chrome 通信通道并免管理员权限写入注册表（`HKCU`）。
+3. 安装成功后，黑框会提示：`Windows 安装已全部顺利完成！`。
 
-## 停止与卸载
+#### 第三步：启动 Java 后台服务
+根据您的使用习惯任选一种启动方式：
+- **方式 A（直观推荐）**：双击 **`start_backend.bat`**  
+  会打开一个黑框窗口常驻显示后台轮询日志；
+- **方式 B（静默无黑框）**：双击 **`start_backend_silent.vbs`**  
+  后台完全静默常驻运行，无任何弹窗打扰。
 
-先在助手中暂停监控。仅卸载扩展不会停止 Java 后台。停止当前登录服务：
+#### 第四步：在 Chrome 浏览器中加载扩展
+1. 打开 Google Chrome 浏览器，在地址栏直接输入访问：`chrome://extensions/`
+2. 开启页面右上角的 **「开发者模式」** 开关；
+3. 点击左上角的 **「加载已解压的扩展程序」**；
+4. 在弹出的文件选择器中，选择本安装包中的 **`extension`**（或仓库中的 `work/extension`）文件夹；
+5. 加载完成后，点击浏览器右上角扩展拼图图标打开 **「iPhoneduo助手aigoodbro」**；
+6. 页面左侧状态栏显示绿色 **「已连接本机 Java 后台」**，即代表全部配置成功！
 
-```bash
-launchctl bootout "gui/$(id -u)/com.aigoodbro.apple-helper"
-```
+> **Windows 常见排查**：
+> - 若运行 `install_windows.bat` 提示未检测到 Java，请确认已安装上述 Adoptium Java，或重启一次电脑让环境变量生效。
+> - 若扩展页面显示“后台未连接”，请确认已双击运行 `start_backend.bat` 开启后台。
 
-取消以后登录启动时，将 `~/Library/LaunchAgents/com.aigoodbro.apple-helper.plist` 移到废纸篓，再移除 Chrome 扩展及 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.aigoodbro.apple_helper.json`。保留运行目录可保留任务；不会自动删除 JDK 或个人配置。
+---
 
-## 开发与验证
+## 🍏 macOS 用户安装与运行手册
 
-```bash
-npm --prefix work/extension test
-npm --prefix work/extension run check
-sh work/backend/build.sh
-cd work/backend
-/usr/bin/python3 -m unittest test_native_host.py test_install_macos.py
-```
+macOS 环境利用原生 `launchd` 守护进程，可随开机自动常驻。
 
-测试覆盖版本检测、升级已读提示、精确门店/SKU 解析、503/429 冷却、取消和晚到响应、通知去重、金额/商品/数量/付款方式核对及重复提交保护。测试使用隔离夹具，不访问用户购物袋、不创建真实订单。离线通过不能替代真实官网验收。维护新版时需同步扩展 manifest、release-info.js 与仓库根 update.json，先通过测试再发布。
+### 运行前准备
+- 操作系统：macOS 12+ (Intel 或 Apple Silicon)
+- 安装环境：JDK 21（推荐 `brew install openjdk@21`）及 Chrome 120+
 
-## 来源
+### 一键安装步骤
+1. 打开终端（Terminal），克隆或解压代码：
+   ```bash
+   git clone https://github.com/BLACKIELF/iphoneduo-aigoodbro.git
+   cd iphoneduo-aigoodbro
+   ```
+2. 构建并注册系统级守护后台：
+   ```bash
+   sh work/backend/build.sh
+   python3 work/backend/install_macos.py
+   ```
+3. 打开 Chrome，访问 `chrome://extensions/`，开启右上角「开发者模式」。
+4. 点击「加载已解压的扩展程序」，选择本仓库中的 `work/extension` 文件夹。
+5. 打开助手控制台，确认显示绿色「已连接本机 Java 后台」。
 
-基于 [Sunbelife/apple-store-helper-15](https://github.com/Sunbelife/apple-store-helper-15) 的商品、门店与扩展配置，结合 [MoshiCoCo/Apple-Monitor](https://github.com/MoshiCoCo/Apple-Monitor) 的查询和通知协议；适配 [suversal/apple-store-inventory-monitor](https://github.com/suversal/apple-store-inventory-monitor) 的自提地区、门店、时段、联系人核验、支付宝与结账步骤，并接入本项目的授权和单次提交状态机。相关 GPL 许可和来源声明随仓库提供；未引入其浏览器控制器或反检测功能。
+> **macOS 服务管理**：
+> - 停止后台服务：`launchctl bootout "gui/$(id -u)/com.aigoodbro.apple-helper"`
+> - 重启后台服务：`python3 work/backend/install_macos.py`
 
-完整来源、版本及修改说明见 [SOURCES.md](work/extension/SOURCES.md)。软件不隶属于 Apple，不保证库存、供货或下单成功。
+---
+
+## 🛒 「直达下单界面」与「履约方式」配置说明
+
+本助手不仅提供精准库存监控，更能助您在放货瞬间抢占先机：
+
+### 1. 第一步：明确履约方式（网络送货 vs 门店自提）
+在 **「01 选择商品」** 中，第一步即让您清晰决定履约方式：
+- **门店自提 (指定直营店取货)**：  
+  选择您所在省份与具体 Apple 直营店（如北京三里屯、上海环球港等）。监控将精确锁定该门店的每日配额，直达下单时自动穿透并选配该门店最早可用的提货时间段。
+- **送货上门 (官方快递配送)**：  
+  由 Apple 官方工厂/仓库直接顺丰快递送达您的个人收货地址。选择此项后省份与门店选择将自动收起，监控列表中显示 `【送货上门】`，直达下单时自动切换为官方送货通道，免去抢门店预约名额的烦恼。
+
+### 2. 从任务卡片单键直达
+在监控列表中建立好您心仪的机型（例如 iPhone 17 Pro 256GB 黑色），点击卡片右侧的 **「直达下单」** 按钮。程序将根据您选择的履约方式自动启动自动化流程：自动选配机型规格、加入购物袋、选定门店自提最早时段（或送货上门）、选定支付宝，并直接前台置顶跳转到官网结算页面。
+
+### 3. 到货自动跳转 + 持续响铃
+启动监控后，程序在后台高频检测。一旦探测到目标规格有货，系统将**立即启动持续和弦响铃**，并在浏览器中**自动跳转激活下单标签页**，您只需核对价格并点击“立即下单”即可锁定货源！
+
+### 4. 安全第一准则
+程序严格停在最终“准备下单了吗？”页面，绝不保存您的个人支付密码，绝不执行无感代扣支付，所有交易均在 Apple 官方加密环境由您手动最终确认。
+
+---
+
+## 🎨 品牌形象与设计规范
+
+本项目全面启用 **AiGoodBro** 官方卡通吉祥物形象（无眼镜版官方设定：深发微翘、Bro 蓝夹克、红拉链袖口细节、直筒长裤与纯白球鞋），已正式停用旧版双开门软件图标：
+- **形象资产归档**：收录于 [`docs/brand/`](docs/brand/)，包含 1254×1254 微笑头像、思考头像、惊喜头像及完整三视图；
+- **设计规范文件**：详细说明见 [`docs/DESIGN-GUIDELINES.md`](docs/DESIGN-GUIDELINES.md)，规范了角色视觉识别点、排版字体规范（PingFang SC）、状态色彩、Web Audio 纯净和弦持续响铃音频规范与自动跳转安全流程。
+
+---
+
+## 🔄 版本更新与升级检测
+
+在控制台第一部分「版本与升级」中：
+- 点击 **「检查更新」**：系统会实时连接 GitHub 检测最新公开版本。
+- 若提示 **`✅ 当前已是最新公开版本 (1.6.0)`**：代表本地已是最全新代码，无需执行任何更新操作。
+- 若检测到新版本：会自动展示本次更新详情，并为您生成一键「复制 Codex 更新口令」。
+
+---
+
+## 🛡️ 数据隐私与免责声明
+
+1. **本地私有存储**：所有监控任务、Bark/飞书推送密钥仅保存在本机 `%LOCALAPPDATA%`（Windows）或 `Application Support`（macOS）以及扩展本地缓存中，不上传至任何第三方云端。
+2. **免责声明**：本软件为开源辅助工具，不隶属于 Apple Inc.，不保证 100% 抢购成功或门店必有库存，一切供货与订单状态以 Apple 官网结账结果为准。

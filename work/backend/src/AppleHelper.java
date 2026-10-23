@@ -48,6 +48,7 @@ public final class AppleHelper implements AutoCloseable {
 
     public static void main(String[] args) throws Exception {
         if (args.length == 1 && args[0].equals("--self-test")) { AppleHelperTest.main(new String[0]); return; }
+        if (args.length >= 1 && args[0].equals("--native-messaging")) { runNativeMessaging(args); return; }
         if (args.length != 0) throw new IllegalArgumentException("不支持的启动参数");
         Path stateDir = Path.of(requiredEnv("APPLE_HELPER_STATE_DIR"));
         Path tokenFile = Path.of(requiredEnv("APPLE_HELPER_TOKEN_FILE"));
@@ -58,6 +59,74 @@ public final class AppleHelper implements AutoCloseable {
         app.startHttp(PORT);
         Runtime.getRuntime().addShutdownHook(new Thread(app::close));
         System.out.println("Apple 购买助手 " + VERSION + " 后台已就绪（仅本机）");
+    }
+
+    static void runNativeMessaging(String[] args) {
+        String expectedOrigin = "chrome-extension://agooghaedakdaimodmlajgkgondpjjil/";
+        if (args.length > 1 && !args[1].equals(expectedOrigin)) {
+            System.exit(1);
+        }
+        try {
+            Path tokenFile;
+            String envToken = System.getenv("APPLE_HELPER_TOKEN_FILE");
+            if (envToken != null && !envToken.isBlank()) {
+                tokenFile = Path.of(envToken);
+            } else if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+                String localAppData = System.getenv("LOCALAPPDATA");
+                Path base = localAppData != null ? Path.of(localAppData) : Path.of(System.getProperty("user.home"), "AppData", "Local");
+                tokenFile = base.resolve("ApplePurchaseHelper").resolve("token");
+            } else {
+                tokenFile = Path.of(System.getProperty("user.home"), "Library", "Application Support", "ApplePurchaseHelper", "token");
+            }
+            if (!Files.exists(tokenFile)) {
+                writeNativeResponse("{\"ok\":false,\"error\":\"后台配对密钥不存在，请先运行安装程序\"}".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+            String token = Files.readString(tokenFile, StandardCharsets.UTF_8).trim();
+            InputStream in = System.in;
+            byte[] header = new byte[4];
+            while (in.readNBytes(header, 0, 4) == 4) {
+                int length = (header[0] & 0xFF) | ((header[1] & 0xFF) << 8) | ((header[2] & 0xFF) << 16) | ((header[3] & 0xFF) << 24);
+                if (length <= 0 || length > 1024 * 1024) break;
+                byte[] messageBytes = in.readNBytes(length);
+                if (messageBytes.length != length) break;
+                
+                byte[] responseBytes;
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) new URI("http://127.0.0.1:17371/command").toURL().openConnection(Proxy.NO_PROXY);
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Authorization", "Bearer " + token);
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(12000);
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(messageBytes);
+                    }
+                    int code = conn.getResponseCode();
+                    InputStream respIn = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
+                    responseBytes = respIn != null ? respIn.readAllBytes() : "{\"ok\":false,\"error\":\"后台未响应\"}".getBytes(StandardCharsets.UTF_8);
+                } catch (Exception err) {
+                    responseBytes = "{\"ok\":false,\"error\":\"Java 后台未连接，请先双击 start_backend.bat 启动后台\"}".getBytes(StandardCharsets.UTF_8);
+                }
+                writeNativeResponse(responseBytes);
+            }
+        } catch (Exception ignored) {
+            System.exit(0);
+        }
+    }
+
+    static void writeNativeResponse(byte[] responseBytes) throws IOException {
+        int respLen = responseBytes.length;
+        byte[] respHeader = new byte[] {
+            (byte) (respLen & 0xFF),
+            (byte) ((respLen >> 8) & 0xFF),
+            (byte) ((respLen >> 16) & 0xFF),
+            (byte) ((respLen >> 24) & 0xFF)
+        };
+        System.out.write(respHeader);
+        System.out.write(responseBytes);
+        System.out.flush();
     }
     static String requiredEnv(String name) {
         String value = System.getenv(name);

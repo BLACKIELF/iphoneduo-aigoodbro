@@ -58,12 +58,12 @@
       </div>
       <div class="field-grid">
         <label><span>地区</span><select id="area"></select></label>
-        <label><span>省份 / 州</span><select id="province"></select></label>
-        <label class="wide"><span>门店</span><select id="store"></select></label>
+        <label><span>履约方式</span><select id="fulfillment"><option value="pickup" selected>门店自提 (指定直营店取货)</option><option value="delivery">送货上门 (官方快递配送)</option></select></label>
+        <label id="province-field"><span>省份 / 州</span><select id="province"></select></label>
+        <label id="store-field" class="wide"><span>自提门店</span><select id="store"></select></label>
         <label><span>型号</span><select id="model"></select></label>
         <label><span>容量 / 尺寸</span><select id="capacity"></select></label>
         <label class="wide"><span>颜色 / 款式</span><select id="color"></select></label>
-
       </div>
       <button id="add" class="primary full">添加到监控列表</button>
       <p id="form-message" class="form-message" aria-live="polite"></p>
