@@ -13,6 +13,10 @@ export async function initializeUpdateUI({ document, chrome, checker, release = 
   const field = name => document.getElementById(`update-${name}`);
   const currentVersion = chrome.runtime.getManifest().version;
   field("current").textContent = currentVersion;
+  const topbarVersion = typeof document?.querySelector === "function" ? document.querySelector(".topbar .version") : null;
+  if (topbarVersion) {
+    topbarVersion.textContent = `${currentVersion} · ${release.versionName || "1023v1"} · Chrome + Java`;
+  }
   let saved = {};
   try { saved = await chrome.storage.local.get(["updateSeenVersion", "updateInstallEvent"]); }
   catch { /* Still show the loaded version if local storage is temporarily unavailable. */ }
@@ -53,8 +57,16 @@ export async function initializeUpdateUI({ document, chrome, checker, release = 
       if (result.status === "available") {
         field("status").textContent = `发现新版本 ${result.latestVersion} · ${result.versionName}`;
         field("prompt").value = updatePrompt(result.latestVersion, result.versionName);
-      } else if (result.status === "current") field("status").textContent = `当前已是最新公开版本 ${currentVersion}`;
-      else if (result.status === "ahead") field("status").textContent = "本地版本高于当前公开版本，无需降级。";
+      } else if (result.status === "current") {
+        field("status").textContent = `当前已是最新公开版本 ${currentVersion}`;
+        if (force) {
+          const originalText = field("check").textContent;
+          field("check").textContent = "✅ 已是最新";
+          setTimeout(() => {
+            if (field("check").textContent === "✅ 已是最新") field("check").textContent = originalText;
+          }, 1800);
+        }
+      } else if (result.status === "ahead") field("status").textContent = "本地版本高于当前公开版本，无需降级。";
       else field("status").textContent = "检查失败，暂时无法确认是否有新版；请稍后重试。";
     } catch {
       field("status").textContent = "检查失败，暂时无法确认是否有新版；请稍后重试。";
