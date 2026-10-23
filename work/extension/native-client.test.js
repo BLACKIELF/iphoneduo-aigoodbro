@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createNativeClient, NATIVE_HOST, redactText } from "./native-client.js";
 
 const task = { id: "fixture-task", areaCode: "cn", areaTitle: "中国大陆", store: { StoreNumber: "R001", CityStoreName: "测试门店" }, product: { Code: "TESTCH/A", Type: "iphoneduo", Model: "iPhone Duo", Capacity: "256GB", Color: "测试色" } };
-const settings = { barkUrl: "", feishuWebhook: "", feishuSecret: "", intervalSeconds: 30 };
+const settings = { barkUrl: "", feishuWebhook: "", feishuSecret: "", intervalSeconds: 30, soundAlert: true };
 const snapshot = (overrides = {}) => ({ ok: true, monitoring: false, tasks: [structuredClone(task)], notificationSettings: { ...settings }, monitorState: { running: false, checking: false, lastCheck: "", items: {}, log: [] }, ...overrides });
 function event() { const listeners = []; return { listeners, addListener: fn => listeners.push(fn) }; }
 function deferred() { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; }

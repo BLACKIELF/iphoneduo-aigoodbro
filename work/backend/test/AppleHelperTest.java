@@ -66,9 +66,10 @@ public final class AppleHelperTest {
         Map<String,Object> invalidSku = task(); AppleHelper.object(invalidSku.get("product"), "product").put("Code", "../../private");
         rejects(() -> AppleHelper.normalizeTasks(List.of(invalidSku)), "unsafe SKU");
         equal(AppleHelper.normalizeSettings(Map.of()).get("intervalSeconds"), 30, "default interval");
-        for (int interval : List.of(30,60,120,300)) equal(AppleHelper.normalizeSettings(map("intervalSeconds", interval)).get("intervalSeconds"), interval, "allowed interval");
+        for (int interval : List.of(1, 10, 30, 60, 120, 300)) equal(AppleHelper.normalizeSettings(map("intervalSeconds", interval)).get("intervalSeconds"), interval, "allowed interval");
         rejects(() -> AppleHelper.normalizeSettings(map("intervalSeconds", 30.1)), "fraction interval rejected");
-        rejects(() -> AppleHelper.normalizeSettings(map("intervalSeconds", 1)), "rapid polling rejected");
+        rejects(() -> AppleHelper.normalizeSettings(map("intervalSeconds", 0)), "non-positive interval rejected");
+        rejects(() -> AppleHelper.normalizeSettings(map("intervalSeconds", -5)), "negative interval rejected");
         rejects(() -> AppleHelper.normalizeSettings(map("feishuSecret", "secret")), "orphan secret rejected");
         for (String url : List.of("http://api.day.app/key", "https://evil.example/key", "https://api.day.app.evil.example/key", "https://x@api.day.app/key", "https://api.day.app:443/key", "https://api.day.app/key#fragment", "https://api.day.app/"))
             rejects(() -> AppleHelper.normalizeSettings(map("barkUrl", url)), "unsafe Bark URL");

@@ -6,7 +6,7 @@ import { compareVersions } from "./update-checker.js";
 
 const backgroundSource = readFileSync(new URL("./background.js", import.meta.url), "utf8");
 const TASK = { id: "task-1", areaCode: "cn", store: { StoreNumber: "R617" }, product: { Code: "MG744CH/A" } };
-const SETTINGS = { barkUrl: "", feishuWebhook: "", feishuSecret: "", intervalSeconds: 30 };
+const SETTINGS = { barkUrl: "", feishuWebhook: "", feishuSecret: "", intervalSeconds: 30, soundAlert: true };
 
 function deferred() {
   let resolve;

@@ -4,9 +4,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
   barkUrl: "",
   feishuWebhook: "",
   feishuSecret: "",
-  intervalSeconds: 30
+  intervalSeconds: 30,
+  soundAlert: true
 });
-const INTERVALS = new Set([30, 60, 120, 300]);
 
 function settingText(value, label, limit = 4096) {
   if (value == null) return "";
@@ -29,9 +29,12 @@ export function normalizeNotificationSettings(input = {}) {
     barkUrl: settingText(input.barkUrl, "Bark 地址"),
     feishuWebhook: settingText(input.feishuWebhook, "飞书 Webhook"),
     feishuSecret: settingText(input.feishuSecret, "飞书签名密钥"),
-    intervalSeconds: input.intervalSeconds == null ? 30 : Number(input.intervalSeconds)
+    intervalSeconds: input.intervalSeconds == null ? 30 : Number(input.intervalSeconds),
+    soundAlert: input.soundAlert === undefined ? true : Boolean(input.soundAlert)
   };
-  if (!INTERVALS.has(settings.intervalSeconds)) throw new Error("检查间隔只支持 30、60、120 或 300 秒");
+  if (!Number.isInteger(settings.intervalSeconds) || settings.intervalSeconds < 1 || settings.intervalSeconds > 3600) {
+    throw new Error("检查间隔只支持 1 到 3600 秒");
+  }
   if (settings.barkUrl) {
     const url = safeURL(settings.barkUrl, "Bark 地址");
     if (url.hostname !== "api.day.app" || !/^\/[^/]+(?:\/.*)?$/.test(url.pathname)) {

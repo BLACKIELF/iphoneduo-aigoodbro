@@ -251,6 +251,7 @@ public final class AppleHelper implements AutoCloseable {
                             addLog(label(task) + "：" + status + (stock.known() ? "" : " · " + detail));
                         if (stock.known() && !stock.available()) item.remove("notificationDelivery");
                         if (monitoring && stock.known() && stock.available() && !Boolean.TRUE.equals(monitoredAvailability(previous))) {
+                            if (!Boolean.FALSE.equals(settings.get("soundAlert"))) playAlertSound();
                             Map<String,Object> channels = new LinkedHashMap<>();
                             if (!settings.get("barkUrl").equals("")) channels.put("Bark", deliveryChannel());
                             if (!settings.get("feishuWebhook").equals("")) channels.put("飞书 / Lark", deliveryChannel());
@@ -469,6 +470,19 @@ public final class AppleHelper implements AutoCloseable {
         }
         return result;
     }
+    static void playAlertSound() {
+        try {
+            String os = System.getProperty("os.name", "").toLowerCase();
+            if (os.contains("mac")) {
+                new ProcessBuilder("/usr/bin/afplay", "/System/Library/Sounds/Glass.aiff").start();
+            } else if (os.contains("win")) {
+                new ProcessBuilder("powershell", "-c", "[console]::beep(1000, 300); [console]::beep(1400, 400)").start();
+            }
+        } catch (Exception ignored) {}
+        try {
+            java.awt.Toolkit.getDefaultToolkit().beep();
+        } catch (Throwable ignored) {}
+    }
     static Map<String,Object> normalizeSettings(Object input) {
         Map<String,Object> raw = object(input, "通知设置");
         String bark = text(raw.get("barkUrl"), "Bark 地址", 4096, false), webhook = text(raw.get("feishuWebhook"), "飞书 Webhook", 4096, false),
@@ -477,7 +491,8 @@ public final class AppleHelper implements AutoCloseable {
         int interval;
         try { interval = new java.math.BigDecimal(intervalRaw.toString()).intValueExact(); }
         catch (Exception error) { throw new IllegalArgumentException("检查间隔无效"); }
-        if (!INTERVALS.contains(interval)) throw new IllegalArgumentException("检查间隔只支持 30、60、120 或 300 秒");
+        if (interval < 1 || interval > 3600) throw new IllegalArgumentException("检查间隔只支持 1 到 3600 秒");
+        boolean soundAlert = Boolean.parseBoolean(String.valueOf(raw.getOrDefault("soundAlert", true)));
         if (!bark.isEmpty()) {
             URI uri = safeURI(bark);
             if (!"api.day.app".equals(uri.getHost()) || !uri.getPath().matches("/[^/]+(?:/.*)?")) throw new IllegalArgumentException("Bark 地址必须使用 api.day.app 官方 HTTPS 地址");
@@ -487,7 +502,7 @@ public final class AppleHelper implements AutoCloseable {
             if (!Set.of("open.feishu.cn", "open.larksuite.com").contains(uri.getHost()) || uri.getQuery() != null ||
                 !uri.getPath().matches("/open-apis/bot/v2/hook/[A-Za-z0-9_-]+")) throw new IllegalArgumentException("飞书 Webhook 必须使用飞书或 Lark 官方机器人地址");
         } else if (!secret.isEmpty()) throw new IllegalArgumentException("填写飞书签名密钥前请填写 Webhook");
-        return map("barkUrl", bark, "feishuWebhook", webhook, "feishuSecret", secret, "intervalSeconds", interval);
+        return map("barkUrl", bark, "feishuWebhook", webhook, "feishuSecret", secret, "intervalSeconds", interval, "soundAlert", soundAlert);
     }
     static URI safeURI(String text) {
         try {

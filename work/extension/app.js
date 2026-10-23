@@ -24,7 +24,14 @@ const elements = {
   logs: document.querySelector("#logs"),
   formMessage: document.querySelector("#form-message"),
   backendMessage: document.querySelector("#backend-message"),
-  reconnect: document.querySelector("#reconnect")
+  reconnect: document.querySelector("#reconnect"),
+  alarmBanner: document.querySelector("#alarm-banner"),
+  alarmBannerTitle: document.querySelector("#alarm-banner-title"),
+  alarmBannerDesc: document.querySelector("#alarm-banner-desc"),
+  stopAlarmBtn: document.querySelector("#stop-alarm-btn"),
+  soundAlert: document.querySelector("#sound-alert"),
+  testSound: document.querySelector("#test-sound"),
+  soundStatus: document.querySelector("#sound-status")
 };
 
 let productsByModel = {};
@@ -40,6 +47,78 @@ let refreshInFlight = null;
 let refreshTimer;
 let inventoryPageResults = {};
 let inventoryQueryPending = false;
+let audioCtx = null;
+let alarmInterval = null;
+let isRinging = false;
+const notifiedInStockTasks = new Set();
+
+function getAudioContext() {
+  if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContextClass();
+  }
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+}
+
+function playAlarmTone(freq, durationMs, startTimeOffset = 0) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    const start = ctx.currentTime + startTimeOffset;
+    const end = start + durationMs / 1000;
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.001, start);
+    gain.gain.exponentialRampToValueAtTime(0.35, start + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, end);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(end);
+  } catch {}
+}
+
+function playChimeSequence() {
+  playAlarmTone(1046.5, 180, 0);
+  playAlarmTone(1318.5, 180, 0.12);
+  playAlarmTone(1567.98, 400, 0.24);
+}
+
+function startContinuousAlarm(message = "发现库存！", detail = "") {
+  if (elements.alarmBanner) {
+    elements.alarmBanner.hidden = false;
+    if (elements.alarmBannerTitle) elements.alarmBannerTitle.textContent = message;
+    if (elements.alarmBannerDesc && detail) elements.alarmBannerDesc.textContent = detail;
+  }
+  if (isRinging) return;
+  isRinging = true;
+  getAudioContext();
+  playChimeSequence();
+  if (alarmInterval) clearInterval(alarmInterval);
+  alarmInterval = setInterval(() => {
+    playChimeSequence();
+  }, 1000);
+}
+
+function stopContinuousAlarm() {
+  isRinging = false;
+  if (alarmInterval) {
+    clearInterval(alarmInterval);
+    alarmInterval = null;
+  }
+  if (elements.alarmBanner) {
+    elements.alarmBanner.hidden = true;
+  }
+}
+
+function unlockAudio() {
+  getAudioContext();
+}
 
 try {
   await initialize();
@@ -93,6 +172,33 @@ function bindEvents() {
   for (const field of [elements.bark, elements.feishuWebhook, elements.feishuSecret, elements.interval]) {
     field.addEventListener("input", () => { settingsDirty = true; elements.settingsMessage.textContent = "设置有改动，保存后生效"; });
   }
+  if (elements.soundAlert) {
+    elements.soundAlert.addEventListener("change", () => {
+      settingsDirty = true;
+      elements.settingsMessage.textContent = "设置有改动，保存后生效";
+    });
+  }
+  if (elements.testSound) {
+    elements.testSound.addEventListener("click", () => {
+      unlockAudio();
+      playChimeSequence();
+      if (elements.soundStatus) {
+        elements.soundStatus.textContent = "已播放测试铃声";
+        setTimeout(() => {
+          if (elements.soundStatus && elements.soundStatus.textContent === "已播放测试铃声") {
+            elements.soundStatus.textContent = "";
+          }
+        }, 3000);
+      }
+    });
+  }
+  if (elements.stopAlarmBtn) {
+    elements.stopAlarmBtn.addEventListener("click", () => {
+      stopContinuousAlarm();
+    });
+  }
+  window.addEventListener("click", unlockAudio, { passive: true });
+  window.addEventListener("keydown", unlockAudio, { passive: true });
   elements.add.addEventListener("click", addTask);
   elements.start.addEventListener("click", startMonitoring);
   elements.stop.addEventListener("click", stopMonitoring);
@@ -121,6 +227,11 @@ function bindEvents() {
     if (changes.backendConnection) {
       backendConnected = changes.backendConnection.newValue?.connected === true;
       backendError = changes.backendConnection.newValue?.error || "";
+    }
+    if (changes.monitorState || changes.tasks) {
+      const currentTasks = changes.tasks ? (Array.isArray(changes.tasks.newValue) ? changes.tasks.newValue : []) : tasks;
+      const currentState = changes.monitorState ? changes.monitorState.newValue : monitorState;
+      checkForStockAlert(currentTasks, currentState, readSettings());
     }
     render();
   });
@@ -259,6 +370,7 @@ async function addTask() {
 }
 
 async function startMonitoring() {
+  unlockAudio();
   if (tasks.length === 0) {
     setFormMessage("请先添加至少一个监控任务。", true);
     return;
@@ -273,6 +385,7 @@ async function startMonitoring() {
 }
 
 async function stopMonitoring() {
+  stopContinuousAlarm();
   const result = await sendBackendCommand({ type: "stop-monitor" });
   setFormMessage(result?.ok ? "Java 后台监控已暂停。" : result?.error || "暂停失败", !result?.ok);
 }
@@ -512,7 +625,8 @@ function readSettings() {
     barkUrl: elements.bark.value.trim(),
     feishuWebhook: elements.feishuWebhook.value.trim(),
     feishuSecret: elements.feishuSecret.value.trim(),
-    intervalSeconds: Number(elements.interval.value)
+    intervalSeconds: Number(elements.interval.value),
+    soundAlert: elements.soundAlert ? elements.soundAlert.checked : true
   };
 }
 
@@ -534,6 +648,45 @@ function populateSettings(settings = {}) {
   elements.feishuWebhook.value = settings.feishuWebhook || "";
   elements.feishuSecret.value = settings.feishuSecret || "";
   elements.interval.value = String(settings.intervalSeconds || 30);
+  if (elements.soundAlert) {
+    elements.soundAlert.checked = settings.soundAlert !== false;
+  }
+}
+
+function checkForStockAlert(tasksList, state, settings) {
+  if (!Array.isArray(tasksList) || !state?.items) return;
+  const soundEnabled = settings?.soundAlert !== false;
+  let newlyInStockTask = null;
+
+  for (const task of tasksList) {
+    const item = state.items[task.id];
+    if (item?.available === true) {
+      if (!notifiedInStockTasks.has(task.id)) {
+        notifiedInStockTasks.add(task.id);
+        if (!newlyInStockTask) newlyInStockTask = task;
+      }
+    } else {
+      notifiedInStockTasks.delete(task.id);
+    }
+  }
+
+  if (newlyInStockTask) {
+    const model = newlyInStockTask.product?.Model || "iPhone";
+    const color = newlyInStockTask.product?.Color || "";
+    const store = newlyInStockTask.store?.StoreName || newlyInStockTask.store?.CityStoreName || "Apple Store";
+    const title = `🎉 发现「${model} · ${color}」有货（${store}）！正在持续响铃`;
+    const desc = `已自动跳转至官网结算/下单界面，请尽快确认完成下单！`;
+
+    if (soundEnabled) {
+      startContinuousAlarm(title, desc);
+    } else if (elements.alarmBanner) {
+      elements.alarmBanner.hidden = false;
+      if (elements.alarmBannerTitle) elements.alarmBannerTitle.textContent = title;
+      if (elements.alarmBannerDesc) elements.alarmBannerDesc.textContent = desc;
+    }
+
+    directToOrder(newlyInStockTask);
+  }
 }
 
 function applySnapshot(result) {
@@ -547,6 +700,7 @@ function applySnapshot(result) {
     monitoring = result.monitoring;
     monitorState = result.monitorState;
     if (!settingsDirty) populateSettings(result.notificationSettings);
+    checkForStockAlert(result.tasks, result.monitorState, result.notificationSettings || readSettings());
   }
   render();
 }

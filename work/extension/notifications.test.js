@@ -9,7 +9,8 @@ const jsonResponse = (data, status = 200) => ({ ok: status >= 200 && status < 30
 
 test("notification settings accept only supported HTTPS endpoints and intervals", () => {
   assert.equal(normalizeNotificationSettings().intervalSeconds, 30);
-  for (const intervalSeconds of [30, 60, 120, 300]) assert.equal(normalizeNotificationSettings({ intervalSeconds }).intervalSeconds, intervalSeconds);
+  assert.equal(normalizeNotificationSettings().soundAlert, true);
+  for (const intervalSeconds of [1, 2, 10, 30, 60, 120, 300]) assert.equal(normalizeNotificationSettings({ intervalSeconds }).intervalSeconds, intervalSeconds);
   for (const barkUrl of ["http://api.day.app/key", "https://evil.example/key", "https://api.day.app@evil.example/key", "https://api.day.app/", "https://api.day.app/key#frag"]) {
     assert.throws(() => normalizeNotificationSettings({ barkUrl }));
   }
@@ -17,7 +18,9 @@ test("notification settings accept only supported HTTPS endpoints and intervals"
     assert.throws(() => normalizeNotificationSettings({ feishuWebhook }));
   }
   assert.equal(normalizeNotificationSettings({ ...settings, feishuWebhook: settings.feishuWebhook.replace("open.feishu.cn", "open.larksuite.com") }).intervalSeconds, 30);
-  assert.throws(() => normalizeNotificationSettings({ intervalSeconds: 10 }));
+  assert.throws(() => normalizeNotificationSettings({ intervalSeconds: 0 }));
+  assert.throws(() => normalizeNotificationSettings({ intervalSeconds: -1 }));
+  assert.throws(() => normalizeNotificationSettings({ intervalSeconds: 4000 }));
   assert.throws(() => normalizeNotificationSettings({ feishuSecret: "secret-without-hook" }));
 });
 

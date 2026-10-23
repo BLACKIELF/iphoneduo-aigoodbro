@@ -17,6 +17,16 @@
   </header>
 
   <main>
+    <div id="alarm-banner" class="alarm-banner" hidden>
+      <div class="alarm-banner-content">
+        <span class="alarm-icon">🔔</span>
+        <div>
+          <strong id="alarm-banner-title">发现库存！正在持续响铃提醒</strong>
+          <p id="alarm-banner-desc">已自动跳转至官网结算/下单界面，请尽快确认下单！</p>
+        </div>
+      </div>
+      <button id="stop-alarm-btn" type="button" class="stop-alarm-button">🔕 停止响铃</button>
+    </div>
     <section class="card update-card" aria-label="版本与升级">
       <div class="section-heading compact">
         <h2>版本与升级</h2>
@@ -85,13 +95,34 @@
         <span class="version">提醒由 Java 后台发送</span>
       </div>
       <div class="field-grid">
-        <label><span>检查间隔</span><select id="interval"><option value="30">30 秒</option><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="300">5 分钟</option></select></label>
+        <label><span>检查间隔（支持 1~60 秒每秒可选）</span><select id="interval">
+          <option value="1">1 秒</option><option value="2">2 秒</option><option value="3">3 秒</option><option value="4">4 秒</option><option value="5">5 秒</option>
+          <option value="6">6 秒</option><option value="7">7 秒</option><option value="8">8 秒</option><option value="9">9 秒</option><option value="10">10 秒</option>
+          <option value="11">11 秒</option><option value="12">12 秒</option><option value="13">13 秒</option><option value="14">14 秒</option><option value="15">15 秒</option>
+          <option value="16">16 秒</option><option value="17">17 秒</option><option value="18">18 秒</option><option value="19">19 秒</option><option value="20">20 秒</option>
+          <option value="21">21 秒</option><option value="22">22 秒</option><option value="23">23 秒</option><option value="24">24 秒</option><option value="25">25 秒</option>
+          <option value="26">26 秒</option><option value="27">27 秒</option><option value="28">28 秒</option><option value="29">29 秒</option><option value="30" selected>30 秒</option>
+          <option value="31">31 秒</option><option value="32">32 秒</option><option value="33">33 秒</option><option value="34">34 秒</option><option value="35">35 秒</option>
+          <option value="36">36 秒</option><option value="37">37 秒</option><option value="38">38 秒</option><option value="39">39 秒</option><option value="40">40 秒</option>
+          <option value="41">41 秒</option><option value="42">42 秒</option><option value="43">43 秒</option><option value="44">44 秒</option><option value="45">45 秒</option>
+          <option value="46">46 秒</option><option value="47">47 秒</option><option value="48">48 秒</option><option value="49">49 秒</option><option value="50">50 秒</option>
+          <option value="51">51 秒</option><option value="52">52 秒</option><option value="53">53 秒</option><option value="54">54 秒</option><option value="55">55 秒</option>
+          <option value="56">56 秒</option><option value="57">57 秒</option><option value="58">58 秒</option><option value="59">59 秒</option><option value="60">60 秒 (1 分钟)</option>
+          <option value="120">120 秒 (2 分钟)</option><option value="300">300 秒 (5 分钟)</option>
+        </select></label>
         <label><span>Bark 推送地址（可选）</span><input id="bark" type="password" autocomplete="off" placeholder="https://api.day.app/…"></label>
         <label><span>飞书 / Lark 机器人 Webhook（可选）</span><input id="feishu-webhook" type="password" autocomplete="off" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></label>
         <label><span>机器人签名密钥（可选）</span><input id="feishu-secret" type="password" autocomplete="off" placeholder="仅开启签名校验时填写"></label>
+        <div style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
+          <label class="check-line" style="margin: 0;"><input id="sound-alert" type="checkbox" checked><span>刷到库存发出响铃声音提醒（系统扬声器与网页双重发声）</span></label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="test-sound" type="button" class="ghost" style="font-size: 13px; padding: 4px 10px;">🔊 试听提醒铃声</button>
+            <span id="sound-status" style="font-size: 12px; color: var(--text-muted);"></span>
+          </div>
+        </div>
       </div>
       <div class="settings-actions"><button id="save-settings" class="secondary">保存设置</button><span id="settings-message" role="status"></span></div>
-      <p class="settings-note">设置保存在本机 Java 后台和扩展缓存。关闭 Chrome 后需要配置 Bark 或飞书 / Lark 才能收到提醒；未配置时仅记录库存日志。启用渠道后，有货提醒会发送门店、型号与官网链接；保存设置不会发送消息。</p>
+      <p class="settings-note">设置保存在本机 Java 后台和扩展缓存。刷到有货时，系统扬声器与前台均会发出响铃提醒；关闭 Chrome 后后台仍可通过系统音及 Bark 或飞书发送有货提醒。1~60 秒高频轮询请注意合理控制频率以防官网风控限制。</p>
     </section>
 
     <section class="card checkout-card">
