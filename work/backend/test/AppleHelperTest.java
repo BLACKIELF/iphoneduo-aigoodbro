@@ -15,9 +15,9 @@ public final class AppleHelperTest {
     static final List<Path> TEMP = new ArrayList<>();
     public static void main(String[] args) throws Exception {
         try {
-            jsonTests(); validationTests(); stockTests(); notificationProtocolTests();
+            jsonTests(); validationTests(); postalQueryTests(); stockTests(); postalStockIdentityTests(); notificationProtocolTests();
             lifecycleTests(); manualCheckTests(); cancellationTests(); recoveryTests(); persistenceFailureTests(); notificationLifecycleTests();
-            inventoryRetryTests(); retryAfterTests(); httpTests();
+            inventoryRetryTests(); deferredStoreStateTests(); retryAfterTests(); httpTests();
             System.out.println("PASS " + assertions + " backend assertions (fixtures and localhost only)");
         } finally {
             for (Path directory : TEMP) try (var paths = Files.walk(directory)) {
@@ -76,9 +76,43 @@ public final class AppleHelperTest {
             equal(AppleHelper.normalizeSettings(map("feishuWebhook", url)).get("feishuWebhook"), url, "official webhook accepted");
         rejects(() -> AppleHelper.normalizeSettings(map("feishuWebhook", "https://open.feishu.cn/open-apis/bot/v2/hook/a?x=1")), "webhook query rejected");
         String uri = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(task()))).toString();
-        check(uri.contains("/shop/retail/pickup-message?") && uri.contains("pl=true") && uri.contains("parts.0=SKU123CH%2FA") && uri.contains("mts.0=regular") && uri.contains("store=R123") && uri.contains("location=100000"), "modern pickup query and postal location");
+        check(uri.contains("/shop/retail/pickup-message?") && uri.contains("pl=true") && uri.contains("parts.0=SKU123CH%2FA") && uri.contains("mts.0=regular") && uri.contains("location=100000"), "modern pickup query and postal location");
         Map<String,Object> japan = task(); japan.put("areaCode", "jp"); AppleHelper.object(japan.get("store"), "store").put("District", "100-0001");
         check(AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(japan))).toString().contains("/jp/shop/retail/pickup-message?") && AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(japan))).toString().contains("cppart=UNLOCKED_JP"), "Japan query");
+    }
+    static void postalQueryTests() throws Exception {
+        for (String postal : List.of("100000", " 100000 ")) {
+            Map<String,Object> input = task(); AppleHelper.object(input.get("store"), "store").put("District", postal);
+            URI uri = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(input)));
+            equal(uri.getHost(), "www.apple.com.cn", "mainland query uses mainland host");
+            check(uri.getRawQuery().contains("location=100000") && !uri.getRawQuery().contains("store="), "mainland valid postal query uses location without store");
+        }
+        for (String postal : List.of("", "10000", "1000000", "12345A", "100-000", "１２３４５６")) {
+            Map<String,Object> input = task(); AppleHelper.object(input.get("store"), "store").put("District", postal);
+            String query = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(input))).getRawQuery();
+            check(query.contains("store=R123") && !query.contains("location="), "mainland missing or invalid postal falls back to exact store: " + postal);
+        }
+        Map<String,Object> missing = task(); AppleHelper.object(missing.get("store"), "store").remove("District");
+        String missingQuery = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(missing))).getRawQuery();
+        check(missingQuery.contains("store=R123") && !missingQuery.contains("location="), "mainland omitted postal falls back to exact store");
+        for (var entry : Map.of("jp", "100-0001", "sg", "100000", "us", "10001", "uk", "SW1A 1AA", "au", "2000").entrySet()) {
+            Map<String,Object> input = task(); input.put("areaCode", entry.getKey());
+            AppleHelper.object(input.get("store"), "store").put("District", entry.getValue());
+            String query = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(input))).getRawQuery();
+            check(query.contains("location=" + AppleHelper.encode(entry.getValue())), "other region retains valid postal: " + entry.getKey());
+            check(entry.getKey().equals("jp") ? query.contains("cppart=UNLOCKED_JP") && !query.contains("store=") : query.contains("store=R123"), "other region retains store or Japan unlock behavior: " + entry.getKey());
+            AppleHelper.object(input.get("store"), "store").put("District", "invalid");
+            String invalidQuery = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(input))).getRawQuery();
+            check(!invalidQuery.contains("location=") && (entry.getKey().equals("jp") ? invalidQuery.contains("cppart=UNLOCKED_JP") && !invalidQuery.contains("store=") : invalidQuery.contains("store=R123")), "other region retains invalid postal behavior: " + entry.getKey());
+        }
+        Map<String,Object> hongKong = task(); hongKong.put("areaCode", "hk");
+        String hkQuery = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(hongKong))).getRawQuery();
+        check(hkQuery.contains("store=R123") && !hkQuery.contains("location="), "Hong Kong retains store-only query");
+        Map<String,Object> second = task(); second.put("id", "task-2"); AppleHelper.object(second.get("product"), "product").put("Code", "SKU456CH/A");
+        String batch = AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(task(), second))).getRawQuery();
+        check(batch.contains("parts.0=SKU123CH%2FA") && batch.contains("parts.1=SKU456CH%2FA") && batch.contains("location=100000") && !batch.contains("store="), "mainland batch retains both exact SKUs in location-only query");
+        AppleHelper.object(second.get("store"), "store").put("StoreNumber", "R999");
+        rejects(() -> AppleHelper.fulfillmentURI(AppleHelper.normalizeTasks(List.of(task(), second))), "location-only query still rejects mixed target stores");
     }
     static void stockTests() throws Exception {
         for (String value : List.of("available", "unavailable", "ineligible", "unknown")) {
@@ -94,6 +128,33 @@ public final class AppleHelperTest {
         Map<String,Object> unknown = AppleHelper.itemState(task(), old, "查询异常", "unknown", null);
         equal(unknown.get("available"), null, "unknown has no asserted availability");
         equal(AppleHelper.known(unknown), true, "unknown preserves last-known availability");
+    }
+    static void postalStockIdentityTests() {
+        for (boolean legacy : List.of(false, true)) {
+            for (String targetStatus : List.of("available", "unavailable")) {
+                Map<String,Object> target = map("storeNumber", "R123", "partsAvailability", map("SKU123CH/A", map("pickupDisplay", targetStatus)));
+                Map<String,Object> neighbor = map("storeNumber", "R999", "partsAvailability", map("SKU123CH/A", map("pickupDisplay", targetStatus.equals("available") ? "unavailable" : "available")));
+                for (List<Object> stores : List.of(List.<Object>of(neighbor, target), List.<Object>of(target, neighbor))) {
+                    AppleHelper.Stock parsed = AppleHelper.parseStock(postalStockPayload(stores, legacy), "R123", "SKU123CH/A");
+                    check(parsed.known() && parsed.available() == targetStatus.equals("available"), "postal response uses exact target store despite neighboring inventory");
+                }
+                for (Object duplicate : List.of(target, neighborWithTargetId(neighbor), map("storeNumber", "R123"))) {
+                    for (List<Object> stores : List.of(List.<Object>of(target, neighbor, duplicate), List.<Object>of(duplicate, neighbor, target))) {
+                        AppleHelper.Stock parsed = AppleHelper.parseStock(postalStockPayload(stores, legacy), "R123", "SKU123CH/A");
+                        check(!parsed.known() && !parsed.available(), "duplicate target store is unknown even with matching, conflicting, or incomplete entries");
+                    }
+                }
+                check(!AppleHelper.parseStock(postalStockPayload(List.of(neighbor), legacy), "R123", "SKU123CH/A").known(), "postal response missing target store cannot borrow neighbor stock");
+                Map<String,Object> missingSku = map("storeNumber", "R123", "partsAvailability", map("OTHER", map("pickupDisplay", "available")));
+                check(!AppleHelper.parseStock(postalStockPayload(List.of(neighbor, missingSku), legacy), "R123", "SKU123CH/A").known(), "postal response missing target SKU cannot borrow other SKU or neighbor stock");
+            }
+        }
+    }
+    static Map<String,Object> neighborWithTargetId(Map<String,Object> neighbor) {
+        Map<String,Object> duplicate = new LinkedHashMap<>(neighbor); duplicate.put("storeNumber", "R123"); return duplicate;
+    }
+    static Object postalStockPayload(List<Object> stores, boolean legacy) {
+        return map("body", legacy ? map("content", map("pickupMessage", map("stores", stores))) : map("stores", stores));
     }
     static void notificationProtocolTests() throws Exception {
         equal(AppleHelper.signature("fixture-secret", "1700000000"), "eSSBpPPdWfBl7avPl9BWSBfQOnLGZ91Xn8G5oZis0sc=", "Feishu timestamp-newline-secret HMAC empty payload");
@@ -318,6 +379,71 @@ public final class AppleHelperTest {
             equal(groupCalls.get(), 1, "later store does not bypass endpoint cooldown");
             equal(AppleHelper.optionalObject(app.items.get("task-2")).get("available"), null, "deferred store inventory is unknown");
             equal(app.consecutiveFailures, 1, "deferred stores do not inflate failure count");
+        }
+    }
+    static void deferredStoreStateTests() throws Exception {
+        for (int status : List.of(429, 503)) for (boolean successfulPrefix : List.of(false, true)) {
+            AtomicLong now = new AtomicLong(System.currentTimeMillis());
+            AtomicInteger calls = new AtomicInteger();
+            Map<String,Object> prefix = task(); prefix.put("id", "prefix");
+            AppleHelper.object(prefix.get("store"), "store").put("StoreNumber", "R111");
+            AppleHelper.object(prefix.get("product"), "product").put("Code", "BEFORECH/A");
+            Map<String,Object> sameStore = task(); sameStore.put("id", "same-store");
+            AppleHelper.object(sameStore.get("product"), "product").put("Code", "SKU456CH/A");
+            List<Map<String,Object>> tasks = new ArrayList<>();
+            if (successfulPrefix) tasks.add(prefix);
+            tasks.add(task()); tasks.add(sameStore);
+            for (int index = 0; index < 3; index++) {
+                Map<String,Object> deferred = task(); deferred.put("id", "deferred-" + index);
+                AppleHelper.object(deferred.get("store"), "store").put("StoreNumber", "R" + (456 + index));
+                tasks.add(deferred);
+            }
+            AppleHelper.Network fake = (uri, method, body) -> {
+                calls.incrementAndGet();
+                if (uri.getRawQuery().contains("parts.0=BEFORECH%2FA"))
+                    return CompletableFuture.completedFuture(new AppleHelper.Reply(200, Json.stringify(map("body", map("stores", List.of(map("storeNumber", "R111", "partsAvailability", map("BEFORECH/A", map("pickupDisplay", "unavailable")))))))));
+                return CompletableFuture.completedFuture(new AppleHelper.Reply(status, "temporary", "180"));
+            };
+            try (AppleHelper app = new AppleHelper(directory(), TOKEN, fake, now::get)) {
+                app.command(map("action", "sync", "tasks", tasks));
+                Map<String,Object> retained = new LinkedHashMap<>();
+                synchronized (app.lock) {
+                    for (Map<String,Object> current : tasks) {
+                        String id = (String) current.get("id");
+                        if (!id.startsWith("deferred-")) continue;
+                        if (!id.equals("deferred-2")) {
+                            boolean available = id.equals("deferred-0");
+                            Map<String,Object> old = AppleHelper.itemState(current, Map.of(), available ? "有货" : "无货", available ? "available" : "unavailable", available);
+                            old.put("checkedAt", "2026-10-16T00:00:00Z"); old.put("lastKnownAt", "2026-10-16T00:00:00Z");
+                            app.items.put(id, old);
+                        }
+                        retained.put(id, Json.parse(Json.stringify(app.items.get(id))));
+                    }
+                }
+                app.command(map("action", "start"));
+                int expectedCalls = successfulPrefix ? 2 : 1;
+                waitFor(() -> calls.get() == expectedCalls && idle(app), "temporary failure finishes only requested store groups");
+                equal(calls.get(), expectedCalls, "temporary failure dispatches no deferred stores");
+                for (var entry : retained.entrySet())
+                    equal(app.items.get(entry.getKey()), entry.getValue(), "unrequested store retains exact status, availability, and check timestamps: " + entry.getKey());
+                for (String id : List.of("task-1", "same-store")) {
+                    Map<String,Object> failed = AppleHelper.optionalObject(app.items.get(id));
+                    equal(failed.get("status"), "查询异常", "actually requested group records temporary failure for each SKU");
+                    equal(failed.get("available"), null, "actually failed inventory is unknown");
+                    check(failed.get("detail").toString().contains(Integer.toString(status)), "actually failed group records correct HTTP status");
+                    check(failed.containsKey("checkedAt"), "actually requested group receives a check timestamp");
+                }
+                if (successfulPrefix) equal(AppleHelper.optionalObject(app.items.get("prefix")).get("status"), "无货", "completed earlier store keeps its real response");
+                equal(app.retryAt, now.get() + 180_000L, "batch cooldown retains server Retry-After");
+                equal(app.consecutiveFailures, 1, "one failed request counts once across deferred stores");
+                check(app.scheduled.getDelay(TimeUnit.MILLISECONDS) > 178_000, "normal monitoring waits for whole-batch cooldown");
+                app.command(map("action", "check")); Thread.sleep(15);
+                equal(calls.get(), expectedCalls, "manual check cannot query deferred stores during cooldown");
+                Map<String,Object> persisted = AppleHelper.object(Json.parse(Files.readString(app.stateFile)), "state");
+                Map<String,Object> persistedItems = AppleHelper.optionalObject(AppleHelper.optionalObject(persisted.get("monitorState")).get("items"));
+                for (var entry : retained.entrySet())
+                    equal(persistedItems.get(entry.getKey()), entry.getValue(), "persisted deferred store keeps original observation");
+            }
         }
     }
     static void retryAfterTests() throws Exception {

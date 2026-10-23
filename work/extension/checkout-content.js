@@ -148,16 +148,21 @@
       const choice = selectionControl(binding?.intent);
       if (choice) result.push({kind:'select-product', field:choice.field});
       if (exactControl(['添加到购物袋','加入购物袋'], ['add-to-cart','add-to-bag','addToBag'])) result.push({kind:'add-to-bag'});
+      if (exactControl(['查看购物袋','前往购物袋','查看我的购物袋'], ['review-bag','reviewBag','bag-overlay-review-bag','proceed-to-checkout'])) result.push({kind:'open-bag'});
     }
     if (currentStage === 'BAG') {
       if (exactControl(['结账','前往结账'], ['bag-checkout-button','checkout'])) result.push({kind:'checkout'});
       if (editControl(binding?.intent, items)) result.push({kind:'edit-variant'});
     }
-    if (currentStage === 'CHECKOUT' && binding?.intent.fulfillment === 'pickup') {
-      if (pickup?.canAct && !pickup.issues.length) result.push({kind:'pickup-step'});
-    } else if (currentStage === 'CHECKOUT') {
-      if (exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款'], ['shipping-continue-button','shipping-address-continue-button'])) result.push({kind:'continue-shipping'});
-      if (exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单'], ['review-order-button','billing-continue-button'])) result.push({kind:'continue-billing'});
+    if (currentStage === 'CHECKOUT') {
+      const guestButton = exactControl(['以访客身份结账','作为访客继续','以访客身份继续','访客结账','继续作为访客','继续以访客身份结账','无需登录直接结账','以访客身份购买'], ['guest-checkout-button','guestLogin-guestCheckout','signIn-guestCheckout','guestCheckout']);
+      if (guestButton) result.push({kind:'guest-checkout'});
+      if (binding?.intent.fulfillment === 'pickup') {
+        if (pickup?.canAct && !pickup.issues.length) result.push({kind:'pickup-step'});
+      } else {
+        if (exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款','继续付款'], ['shipping-continue-button','shipping-address-continue-button','continue-button-label'])) result.push({kind:'continue-shipping'});
+        if (exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单','继续前往查看订单'], ['review-order-button','billing-continue-button','continue-button-review'])) result.push({kind:'continue-billing'});
+      }
     }
     if (currentStage === 'REVIEW' && exactControl(['立即下单'], ['place-order','place-order-button','continue-button-placeOrder'])) result.push({kind:'submit-order'});
     return result;
@@ -212,15 +217,21 @@
       if (!D.sameProduct(s.product,binding.intent.product) || selectionControl(binding.intent)) throw new Error('product-not-ready');
       safeClick(exactControl(['添加到购物袋','加入购物袋'],['add-to-cart','add-to-bag','addToBag'])); return;
     }
+    if (kind === 'open-bag') {
+      safeClick(exactControl(['查看购物袋','前往购物袋','查看我的购物袋'],['review-bag','reviewBag','bag-overlay-review-bag','proceed-to-checkout'])); return;
+    }
+    if (kind === 'guest-checkout') {
+      safeClick(exactControl(['以访客身份结账','作为访客继续','以访客身份继续','访客结账','继续作为访客','继续以访客身份结账','无需登录直接结账','以访客身份购买'],['guest-checkout-button','guestLogin-guestCheckout','signIn-guestCheckout','guestCheckout'])); return;
+    }
     if (kind === 'edit-variant') { safeClick(editControl(binding.intent,s.cartItems)); return; }
     if (kind === 'checkout') { assertCart(s); safeClick(exactControl(['结账','前往结账'],['bag-checkout-button','checkout'])); return; }
     if (kind === 'continue-shipping') {
       if (s.issues.length) throw new Error('form-not-ready');
-      safeClick(exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款'],['shipping-continue-button','shipping-address-continue-button'])); return;
+      safeClick(exactControl(['继续选择送货信息','继续填写送货信息','继续选择付款方式','继续前往付款','继续进行付款','继续付款'],['shipping-continue-button','shipping-address-continue-button','continue-button-label'])); return;
     }
     if (kind === 'continue-billing') {
       if(s.issues.length)throw new Error('form-not-ready');
-      safeClick(exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单'],['review-order-button','billing-continue-button'])); return;
+      safeClick(exactControl(['查看订单','检查订单','继续查看订单','继续检查订单','核对订单','继续前往查看订单'],['review-order-button','billing-continue-button','continue-button-review'])); return;
     }
     if (kind === 'submit-order') {
       const failures=D.validateFinal(snapshot(),binding.intent); if(failures.length)throw new Error(failures.join(','));

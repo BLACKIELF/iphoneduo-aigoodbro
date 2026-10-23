@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { compareVersions } from "./update-checker.js";
 
 const backgroundSource = readFileSync(new URL("./background.js", import.meta.url), "utf8");
 const TASK = { id: "task-1", areaCode: "cn", store: { StoreNumber: "R617" }, product: { Code: "MG744CH/A" } };
@@ -16,16 +17,20 @@ function deferred() {
 function harness({ responseOverride = {}, run = null, accessReady = Promise.resolve() } = {}) {
   const readingTasks = deferred();
   const tasksReply = deferred();
-  const calls = { queries: [], cancellations: 0, native: [], checkout: [], stock: [], armCancellations: 0 };
+  const calls = { queries: [], cancellations: 0, native: [], checkout: [], stock: [], armCancellations: 0,
+    saved: [], badges: [], opened: [] };
   const chrome = {
     runtime: {
       getURL: (path) => "chrome-extension://fixture/" + path,
-      onInstalled: { addListener() {} },
+      getManifest: () => ({version: "1.5.0"}),
+      onInstalled: { addListener(fn) { calls.installed = fn; } },
       onStartup: { addListener() {} },
       onMessage: { addListener() {} }
     },
     alarms: { async get() {}, async create() {}, async clear() {}, onAlarm: { addListener(fn) { calls.alarm = fn; } } },
-    action: { onClicked: { addListener() {} } },
+    action: { onClicked: { addListener() {} }, async setBadgeBackgroundColor() {},
+      async setBadgeText({text}) { calls.badges.push(text); } },
+    tabs: { async query() { return []; }, async create(value) { calls.opened.push(value); } },
     storage: { local: {
       async setAccessLevel() { await accessReady; },
       async get(keys) {
@@ -36,11 +41,12 @@ function harness({ responseOverride = {}, run = null, accessReady = Promise.reso
         if (keys === "checkoutRun") return { checkoutRun: run };
         return { notificationSettings: SETTINGS };
       },
-      async set() {}
+      async set(value) { calls.saved.push(value); }
     } }
   };
   const context = {
     chrome,
+    compareVersions,
     productPurchaseURL: () => "https://www.apple.com.cn/shop/product/MG744CH/A",
     normalizeNotificationSettings: (settings) => settings,
     redactText: (value) => typeof value === "string" ? value : "",
@@ -158,4 +164,44 @@ test("checkout stop raises its controller fence even while storage access setup 
   assert.deepEqual(f.calls.checkout, ["checkout-stop"]);
   gate.resolve();
   assert.equal((await pending).ok, true);
+});
+
+test('upgrading records the actual previous version and marks the icon without starting a purchase', async () => {
+  const f = harness();
+  f.calls.installed({ reason: 'update', previousVersion: '1.4.1' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.calls.saved[0].updateInstallEvent.previousVersion, '1.4.1');
+  assert.equal(f.calls.saved[0].updateInstallEvent.version, '1.5.0');
+  assert.deepEqual(f.calls.badges, ['新']);
+  assert.deepEqual(f.calls.checkout, []);
+  assert.deepEqual(f.calls.native, []);
+  assert.deepEqual(f.calls.opened, []);
+});
+
+test('same-version reload preserves the earlier upgrade notice and does not reflag it', async () => {
+  const f = harness();
+  f.calls.installed({ reason: 'update', previousVersion: '1.5.0' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.calls.saved, []);
+  assert.deepEqual(f.calls.badges, []);
+});
+
+test('downgrading clears a stale new-version badge', async () => {
+  const f = harness();
+  f.calls.installed({ reason: 'update', previousVersion: '1.6.0' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.calls.badges, ['']);
+  assert.deepEqual(f.calls.checkout, []);
+  assert.deepEqual(f.calls.native, []);
+});
+
+test('first install opens the dashboard but does not invent an upgrade or invoke native actions', async () => {
+  const f = harness();
+  f.calls.installed({ reason: 'install' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.calls.saved[0].updateInstallEvent.reason, 'install');
+  assert.equal(f.calls.saved[0].updateInstallEvent.previousVersion, '');
+  assert.deepEqual(f.calls.badges, []);
+  assert.equal(f.calls.opened[0].url, 'chrome-extension://fixture/app.html');
+  assert.deepEqual(f.calls.native, []);
 });

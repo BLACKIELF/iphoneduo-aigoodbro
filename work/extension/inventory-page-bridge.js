@@ -17,8 +17,8 @@
         !/\/(?:bag|checkout|signin|account|orders?|secure)(?:\/|$)/i.test(path);
     } catch { return false; }
   }
-  function query(path) {
-    if (typeof path !== 'string' || path.length > 16_384) throw new Error('invalid-query');
+  function query(path, targetStore) {
+    if (typeof path !== 'string' || path.length > 16_384 || typeof targetStore !== 'string' || !/^R[0-9]{1,8}$/.test(targetStore)) throw new Error('invalid-query');
     const url = new URL(path, window.location.origin);
     if (url.origin !== 'https://www.apple.com.cn' || url.username || url.password || url.hash ||
         url.pathname !== '/shop/retail/pickup-message') throw new Error('invalid-query');
@@ -31,9 +31,10 @@
       if (!part || (part[1] === 'mts' ? value !== 'regular' : !/^[A-Za-z0-9][A-Za-z0-9-]{1,49}(?:\/[A-Za-z0-9]{1,8})?$/.test(value))) throw new Error('invalid-query');
       (part[1] === 'parts' ? parts : modes).set(Number(part[2]), value);
     }
-    if (values.get('pl') !== 'true' || !/^R[0-9]{1,8}$/.test(values.get('store') || '') || !parts.size || parts.size !== modes.size) throw new Error('invalid-query');
+    if (values.get('pl') !== 'true' || (!values.has('store') && !values.has('location')) ||
+        (values.has('store') && values.get('store') !== targetStore) || !parts.size || parts.size !== modes.size) throw new Error('invalid-query');
     for (let index = 0; index < parts.size; index++) if (!parts.has(index) || !modes.has(index)) throw new Error('invalid-query');
-    return { url, store: values.get('store'), skus: [...parts.values()] };
+    return { url, store: targetStore, skus: [...parts.values()] };
   }
   function safePayload(raw, request) {
     const stores = raw?.body?.stores ?? raw?.body?.content?.pickupMessage?.stores;
@@ -88,7 +89,7 @@
     const href = window.location.href;
     if (!validPage()) return;
     let request;
-    try { request = query(message.requestPath); } catch { emit(message.requestId, href, { ok: false, error: '仅允许查询指定门店和 SKU 的 Apple 库存接口' }); return; }
+    try { request = query(message.requestPath, message.targetStore); } catch { emit(message.requestId, href, { ok: false, error: '仅允许查询指定门店和 SKU 的 Apple 库存接口' }); return; }
     if (retryAt > Date.now()) { emit(message.requestId, href, { ok: false, status: retryStatus, error: '官网库存查询正在冷却，请稍后重试', retryAt: new Date(retryAt).toISOString() }); return; }
     if (active) {
       if (active.id !== message.requestId) emit(message.requestId, href, { ok: false, error: '已有库存查询正在进行' });

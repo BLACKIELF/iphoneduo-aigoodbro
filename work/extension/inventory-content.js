@@ -48,14 +48,15 @@
       respond({ ok: true, cancelled }); return false;
     }
     if (!validPage()) { respond({ ok: false, error: '库存查询仅允许在已打开的 Apple 商品页执行' }); return false; }
-    if (typeof message.requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(message.requestId) || typeof message.requestPath !== 'string' || message.requestPath.length > 16_384) {
+    if (typeof message.requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(message.requestId) || typeof message.requestPath !== 'string' || message.requestPath.length > 16_384 ||
+        typeof message.targetStore !== 'string' || !/^R[0-9]{1,8}$/.test(message.targetStore)) {
       respond({ ok: false, error: '库存查询参数无效' }); return false;
     }
     if (pending) {
-      if (pending.id === message.requestId && pending.path === message.requestPath) { pending.promise.then(respond); return true; }
+      if (pending.id === message.requestId && pending.path === message.requestPath && pending.targetStore === message.targetStore) { pending.promise.then(respond); return true; }
       respond({ ok: false, error: '已有库存查询正在进行' }); return false;
     }
-    const id = message.requestId, path = message.requestPath, href = window.location.href;
+    const id = message.requestId, path = message.requestPath, targetStore = message.targetStore, href = window.location.href;
     let finish, timer;
     const promise = new Promise(resolve => {
       finish = result => {
@@ -73,12 +74,12 @@
       if (!validPage() || window.location.href !== href) { onNavigation(); return; }
       finish(cleanResult(value.result));
     }
-    pending = { id, path, promise, cancel() { cancel(); finish({ ok: false, error: '库存查询已取消' }); } };
+    pending = { id, path, targetStore, promise, cancel() { cancel(); finish({ ok: false, error: '库存查询已取消' }); } };
     window.addEventListener('message', onResponse);
     window.addEventListener('pagehide', onNavigation); window.addEventListener('hashchange', onNavigation); window.addEventListener('popstate', onNavigation);
     timer = setTimeout(() => { cancel(); finish({ ok: false, error: 'Apple 页面库存查询超时，请稍后重试' }); }, 12_000);
     promise.then(respond);
-    window.postMessage({ source: SOURCE, direction: 'request', requestId: id, requestPath: path }, window.location.origin);
+    window.postMessage({ source: SOURCE, direction: 'request', requestId: id, requestPath: path, targetStore }, window.location.origin);
     return true;
   });
 })();

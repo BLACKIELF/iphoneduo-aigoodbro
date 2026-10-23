@@ -628,3 +628,29 @@ test('cancelling while a triggered tab is being created leaves it unable to act'
   await h.pulse();
   assert.equal(h.actions().length, 0);
 });
+
+test('guest checkout action is dispatched during checkout signin prompt', async t => {
+  const h = harness(t);
+  await h.start();
+  h.snapshot = { stage: 'CHECKOUT', product, controls: [{ kind: 'guest-checkout' }] };
+  const run = await h.pulse();
+  assert.equal(run.state.status, 'CHECKING_OUT');
+  assert.deepEqual(h.actions().map(event => event.message.command.kind), ['guest-checkout']);
+});
+
+test('open-bag action is dispatched when product overlay shows bag transition', async t => {
+  const h = harness(t);
+  await h.start();
+  h.snapshot = { stage: 'PRODUCT', product, controls: [{ kind: 'open-bag' }] };
+  const run = await h.pulse();
+  assert.deepEqual(h.actions().map(event => event.message.command.kind), ['open-bag']);
+});
+
+test('reaching review in review mode logs direct-to-order completion and focuses window', async t => {
+  const h = harness(t);
+  await h.start({ intent: { ...intent, runMode: 'review', allowSubmit: false } });
+  h.snapshot = { ...clone(review), controls: [] };
+  const run = await h.pulse();
+  assert.equal(run.state.status, 'READY_TO_SUBMIT');
+  assert(run.log.some(l => l.message.includes('已成功直达下单界面')));
+});

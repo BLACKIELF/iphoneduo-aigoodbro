@@ -40,8 +40,8 @@ function harness({ url = 'https://www.apple.com.cn/shop/buy-iphone/iphone-17', f
   const globals = { window, document, URL, AbortController, TextDecoder, Date: FakeDate, setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); } };
   vm.runInNewContext(pageSource, { ...globals });
   vm.runInNewContext(contentSource, { ...globals, chrome: { runtime: { id: 'fixture-extension', onMessage: { addListener(listener) { runtimeListener = listener; } } } } });
-  function ask({ requestPath = PATH, requestId = 'request-' + ++serial, sender = { id: 'fixture-extension' } } = {}) {
-    return new Promise(resolve => { runtimeListener({ type: 'inventory:query', requestId, requestPath }, sender, result => resolve(JSON.parse(JSON.stringify(result)))); });
+  function ask({ requestPath = PATH, targetStore = 'R617', requestId = 'request-' + ++serial, sender = { id: 'fixture-extension' } } = {}) {
+    return new Promise(resolve => { runtimeListener({ type: 'inventory:query', requestId, requestPath, targetStore }, sender, result => resolve(JSON.parse(JSON.stringify(result)))); });
   }
   function cancel(requestId, sender = { id: 'fixture-extension' }) {
     return new Promise(resolve => runtimeListener({ type: 'inventory:cancel', requestId }, sender, result => resolve(JSON.parse(JSON.stringify(result)))));
@@ -62,6 +62,42 @@ test('inventory bridge returns only scoped stock fields through a same-origin GE
   assert.equal(call.options.method, 'GET'); assert.equal(call.options.mode, 'same-origin'); assert.equal(call.options.credentials, 'include'); assert.equal(call.options.redirect, 'error');
   assert.ok(!JSON.stringify(result).includes('never-forward'));
   await flush(); h.assertClean();
+});
+
+test('postal-only requests keep target store separate and exclude nearby store availability', async () => {
+  const requestPath = PATH.replace('&store=R617', '');
+  const stores = [
+    { storeNumber: 'R999', partsAvailability: { 'MEHY4CH/B': { pickupDisplay: 'available' } } },
+    { storeNumber: 'R617', partsAvailability: { 'MEHY4CH/B': { pickupDisplay: 'unavailable' } } }
+  ];
+  const h = harness({ fetchImpl: () => response({ body: JSON.stringify({ body: { stores } }) }) });
+  const result = await h.ask({ requestPath });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.payload.body.stores, [stores[1]]);
+  assert.equal(h.calls[0].requestURL, 'https://www.apple.com.cn' + requestPath);
+  assert.equal(new URL(h.calls[0].requestURL).searchParams.has('store'), false);
+  await flush(); h.assertClean();
+});
+
+test('bridge requires target identity and rejects conflicting store selectors or absent postal selector', async () => {
+  for (const options of [
+    { targetStore: '' }, { targetStore: 'R999' }, { targetStore: 'R617&store=R999' },
+    { requestPath: PATH.replace('&store=R617&location=410000', '') }
+  ]) {
+    const h = harness();
+    assert.equal((await h.ask(options)).ok, false);
+    assert.equal(h.calls.length, 0);
+    await flush(); h.assertClean();
+  }
+});
+
+test('postal responses with duplicate target stores are rejected even if their status agrees', async () => {
+  for (const pickupDisplay of ['available', 'unavailable']) {
+    const stores = [inventory.body.stores[0], { storeNumber: 'R617', partsAvailability: { 'MEHY4CH/B': { pickupDisplay } } }];
+    const h = harness({ fetchImpl: () => response({ body: JSON.stringify({ body: { stores } }) }) });
+    assert.equal((await h.ask({ requestPath: PATH.replace('&store=R617', '') })).ok, false);
+    await flush(); h.assertClean();
+  }
 });
 
 test('inventory bridge rejects other origins, endpoints, unsafe or unbounded query parameters', async () => {

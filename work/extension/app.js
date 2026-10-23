@@ -298,6 +298,43 @@ async function openProduct(task) {
   }
 }
 
+async function directToOrder(task) {
+  if (operationPending) return;
+  setFormMessage(`正在为「${task.product.Model} · ${task.product.Color}」启动直达下单…`, false);
+  try {
+    const store = task.store;
+    const address = store?.City || store?.Province || "浦东新区";
+    const pickup = {
+      storeNumber: store.StoreNumber,
+      storeName: store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName,
+      region: { state: store.Province || store.City || '上海市', city: store.City || store.Province || '上海市', address },
+      slotPolicy: 'earliest'
+    };
+    const intent = {
+      product: task.product,
+      areaCode: 'cn',
+      fulfillment: 'pickup',
+      quantity: 1,
+      maxTotal: 30000,
+      entryMode: 'product',
+      runMode: 'review',
+      allowSubmit: false,
+      acknowledgedTerms: true,
+      pickup
+    };
+    const result = await chrome.runtime.sendMessage({
+      type: 'checkout-start',
+      intent,
+      allowReplaceVariant: true,
+      newIntentAcknowledged: true
+    });
+    if (!result?.ok) throw new Error(result?.error || '无法启动直达下单');
+    setFormMessage(`已启动「${task.product.Model}」直达下单，自动化正在运行，完成后将直达最终下单界面…`, false);
+  } catch (error) {
+    setFormMessage(`直达下单启动失败：${error.message}`, true);
+  }
+}
+
 async function queryOfficialPage(task) {
   if (inventoryQueryPending) return;
   inventoryQueryPending = true;
@@ -368,6 +405,14 @@ function renderTasks() {
     removeButton.addEventListener("click", () => removeTask(task.id));
     actions.append(openButton, removeButton);
     if (task.areaCode === "cn") {
+      const directOrderBtn = document.createElement("button");
+      directOrderBtn.type = "button";
+      directOrderBtn.textContent = "直达下单";
+      directOrderBtn.title = "直接自动选配、加袋并前往该商品的门店自提下单界面";
+      directOrderBtn.disabled = operationPending;
+      directOrderBtn.addEventListener("click", () => directToOrder(task));
+      actions.append(directOrderBtn);
+
       const pageCheck = document.createElement("button");
       pageCheck.type = "button";
       pageCheck.textContent = "官网页查库存";

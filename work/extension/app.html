@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>iPhoneduo助手aigoodbro · 1016v9</title>
+  <title>iPhoneduo助手aigoodbro · 1018v1</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,10 +13,31 @@
       <h1>iPhoneduo助手aigoodbro</h1>
       <p class="subtitle">选择门店与型号，有货时及时提醒</p>
     </div>
-    <div class="version">1016v9 · Chrome + Java</div>
+    <div class="version">1.5.0 · 1018v1 · Chrome + Java</div>
   </header>
 
   <main>
+    <section class="card update-card" aria-label="版本与升级">
+      <div class="section-heading compact">
+        <h2>版本与升级</h2>
+        <button id="update-check" class="secondary" type="button">检查更新</button>
+      </div>
+      <p class="settings-note">当前版本 <strong id="update-current">1.5.0</strong> · 最新公开版本 <strong id="update-latest">尚未检查</strong></p>
+      <p id="update-status" class="form-message" role="status" aria-live="polite">正在检查新版本…</p>
+      <p id="update-checked" class="settings-note"></p>
+      <ul id="update-remote-notes" hidden></ul>
+      <div id="update-actions" hidden>
+        <div class="settings-actions"><button id="update-copy" class="primary" type="button">复制 Codex 更新口令</button><a href="https://github.com/BLACKIELF/iphoneduo-aigoodbro" target="_blank" rel="noopener noreferrer">查看更新说明</a></div>
+        <textarea id="update-prompt" aria-label="Codex 更新口令" rows="4" readonly></textarea>
+        <p id="update-copy-status" role="status"></p>
+      </div>
+      <div id="update-notice" class="update-notice" hidden>
+        <strong id="update-notice-title"></strong>
+        <ul id="update-local-notes"></ul>
+        <button id="update-ack" class="ghost" type="button">知道了</button>
+      </div>
+      <p class="settings-note">打开助手时检查，结果缓存 24 小时；手动检查可立即刷新。只读取 GitHub 公开版本信息，不上传任务或通知设置。检查本身不下载、安装或发起购买；更新前请先停止旧购买任务，更新后重新加载原扩展。</p>
+    </section>
     <section class="card config-card">
       <div class="section-heading">
         <div><p class="step">01</p><h2>选择商品</h2></div>
@@ -74,8 +95,8 @@
     </section>
 
     <section class="card checkout-card">
-      <div class="section-heading"><div><p class="step">04</p><h2>实验性 iPhone 自动购买</h2></div><span id="checkout-status" class="status-badge idle">尚未启动</span></div>
-      <p class="settings-note">实站自动下单尚未验收，Apple Watch 暂不支持自动购买。程序支持邮寄或指定门店自提、最早可用时段，以及有货后结账一次。使用官网已有资料，缺少信息时停止。自动结账需要 Chrome 运行；建议先试跑到确认页。</p>
+      <div class="section-heading"><div><p class="step">04</p><h2>一键直达下单界面 / 自动购买</h2></div><span id="checkout-status" class="status-badge idle">尚未启动</span></div>
+      <p class="settings-note">「直达下单界面」可自动完成商品选配、加入购物袋、穿透访客结账、选择门店自提最早时段与支付宝，直接带您到达官网最终下单页面（停在立即下单前，由您最后确认）。任务列表也支持单键直达下单。</p>
       <div class="field-grid" style="margin-top:16px">
         <label><span>购买型号</span><select id="checkout-model"></select></label>
         <label><span>购买容量</span><select id="checkout-capacity"></select></label>
@@ -87,17 +108,17 @@
         <label id="checkout-address-field" hidden><span>门店公开区县或地址（不是个人收货地址）</span><input id="checkout-address" type="text" maxlength="300" autocomplete="off" placeholder="用于精确匹配官网门店区域"></label>
       </div>
       <label class="check-line"><input id="checkout-submit" type="checkbox"><span>允许程序生成 1 件未付款订单；不执行支付</span></label>
-      <label class="check-line"><input id="checkout-terms" type="checkbox"><span>已阅读并同意 <a href="https://www.apple.com.cn/shop/browse/open/salespolicies" target="_blank" rel="noopener">Apple 销售条款</a>，使用官网当前收货及发票信息</span></label>
+      <label class="check-line"><input id="checkout-terms" type="checkbox" checked><span>已阅读并同意 <a href="https://www.apple.com.cn/shop/browse/open/salespolicies" target="_blank" rel="noopener">Apple 销售条款</a>，使用官网当前收货及发票信息</span></label>
       <label class="check-line"><input id="checkout-replace" type="checkbox"><span>允许更改购物袋内同款、同容量单件商品的颜色</span></label>
       <label class="check-line"><input id="checkout-new" type="checkbox"><span>已核对上次订单，本次明确创建一个新订单</span></label>
-      <div class="settings-actions"><button id="checkout-trial" class="primary">试跑至确认页</button><button id="checkout-start" class="secondary">按授权启动</button><button id="checkout-arm" class="secondary">有货后结账一次</button><button id="checkout-resume" class="secondary">补全信息后继续</button><button id="checkout-stop" class="ghost">停止购买</button><button id="checkout-open" class="ghost">查看购买页面</button></div>
+      <div class="settings-actions"><button id="checkout-trial" class="primary">直达下单界面</button><button id="checkout-start" class="secondary">按授权启动</button><button id="checkout-arm" class="secondary">有货后结账一次</button><button id="checkout-resume" class="secondary">补全信息后继续</button><button id="checkout-stop" class="ghost">停止购买</button><button id="checkout-open" class="ghost">查看购买页面</button></div>
       <p class="settings-note">有货触发仅支持“指定门店自提＋已准备的购物袋”：先建立相同商品和门店的监控任务并开始监控，再启用一次结账。暂停监控或修改任务会取消等待；官网页单次查询不能触发购买。门店区县请按 Apple 官网公开信息填写。</p>
       <p id="checkout-message" class="form-message" role="status"></p><div id="checkout-log" class="logs"></div>
     </section>
 
     <section class="card log-card">
       <div class="section-heading compact">
-        <div><p class="step">04</p><h2>监控日志</h2></div>
+        <div><p class="step">05</p><h2>监控日志</h2></div>
         <span id="last-check">尚未检查</span>
       </div>
       <div id="logs" class="logs" aria-live="polite"></div>
@@ -107,5 +128,6 @@
   <footer><a href="https://aigoodbro.com" target="_blank" rel="noopener">官网 aigoodbro.com</a> · 库存信息来自 Apple 官网，供货以结账页面为准。<a href="licenses/Sunbelife-LICENSE">GPL-3.0</a> · <a href="SOURCES.md">来源与修改说明</a> · 本软件不提供担保。</footer>
   <script type="module" src="app.js"></script>
   <script type="module" src="checkout-ui.js"></script>
+  <script type="module" src="update-ui.js"></script>
 </body>
 </html>

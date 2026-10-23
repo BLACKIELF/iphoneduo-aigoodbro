@@ -138,6 +138,14 @@ export function createCheckoutController(api) {
     catch { await block(run, '页面数据无法验证，已停止。'); return; }
     run.state = transition.state;
     if (previousStatus !== run.state.status) log(run, '任务状态：' + run.state.status);
+    if (run.state.status === 'READY_TO_SUBMIT') {
+      try {
+        await api.tabs.update(run.tabId, { active: true });
+        const currentTab = await api.tabs.get(run.tabId);
+        if (currentTab?.windowId) await api.windows?.update(currentTab.windowId, { focused: true });
+      } catch {}
+      log(run, '已成功直达下单界面（准备下单），请核对订单并点击立即下单完成支付。');
+    }
     await save(run);
     if (transition.effect?.type === 'SUBMIT_ORDER') {
       // SUBMITTING has already been stored. There is no retry path for this effect.
@@ -155,10 +163,11 @@ export function createCheckoutController(api) {
     let command;
     if (snapshot.stage === 'PRODUCT') {
       if (kinds.has('select-product')) command = { kind: 'select-product', field: snapshot.controls.find(c => c.kind === 'select-product').field, product: run.state.intent.product };
+      else if (kinds.has('open-bag')) command = { kind: 'open-bag' };
       else if (kinds.has('add-to-bag')) command = { kind: 'add-to-bag', product: run.state.intent.product };
     } else if (snapshot.stage === 'BAG' && kinds.has('checkout')) command = { kind: 'checkout' };
     else if (snapshot.stage === 'CHECKOUT') {
-      const allowed = run.state.intent.fulfillment === 'pickup' ? ['pickup-step', 'continue-billing', 'checkout'] : ['continue-shipping', 'continue-billing', 'checkout'];
+      const allowed = run.state.intent.fulfillment === 'pickup' ? ['guest-checkout', 'pickup-step', 'continue-billing', 'checkout'] : ['guest-checkout', 'continue-shipping', 'continue-billing', 'checkout'];
       for (const kind of allowed) if (kinds.has(kind)) { command = { kind }; break; }
     }
     if (command) { run.noActionSince = null; await act(run, snapshot, command, expectedEpoch); return; }
@@ -303,8 +312,8 @@ export function createCheckoutController(api) {
   return { handle, pageChanged, wake, inventory, cancelArmed };
 }
 function actionLabel(kind) {
-  return ({ 'select-product': '自动选择商品规格', 'add-to-bag': '自动加入购物袋', checkout: '自动进入结账',
-    'continue-shipping': '继续官网送货步骤', 'continue-billing': '继续官网付款方式步骤',
+  return ({ 'select-product': '自动选择商品规格', 'add-to-bag': '自动加入购物袋', 'open-bag': '已加购，前往购物袋', checkout: '自动进入结账',
+    'guest-checkout': '以访客身份继续结账', 'continue-shipping': '继续官网送货步骤', 'continue-billing': '继续官网付款方式步骤',
     'pickup-step': '继续官网自提门店与时段步骤',
     'edit-variant': '更改购物袋内同款商品颜色', 'submit-order': '提交一次未付款订单，之后只读取结果' })[kind] || kind;
 }

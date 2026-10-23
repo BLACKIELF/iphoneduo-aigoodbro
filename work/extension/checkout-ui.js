@@ -1,9 +1,9 @@
 const $ = id => document.getElementById('checkout-' + id);
 let products = [], stores = [], run = null, busy = false, stopping = false, operationEpoch = 0;
 const labels = {
-  WAITING_FOR_STOCK: '等待指定门店有货（单次）', READY: '准备中', SELECTING_PRODUCT: '自动选配中', CHECKING_OUT: '自动结账中', WAITING_FOR_PAGE: '等待页面', READY_TO_SUBMIT: '等待提交授权', PAYMENT_STOPPED: '已停在付款步骤', CREATED: '准备中', RUNNING: '自动执行中', SELECTING: '选配中', BAG_VERIFIED: '购物袋已核对',
+  WAITING_FOR_STOCK: '等待指定门店有货（单次）', READY: '准备中', SELECTING_PRODUCT: '自动选配中', CHECKING_OUT: '自动结账中', WAITING_FOR_PAGE: '等待页面', READY_TO_SUBMIT: '已直达下单界面（等待确认下单）', PAYMENT_STOPPED: '已停在付款步骤', CREATED: '准备中', RUNNING: '自动执行中', SELECTING: '选配中', BAG_VERIFIED: '购物袋已核对',
   CHECKOUT: '结账中', REVIEW_VERIFIED: '订单已核对', WAITING_FOR_IDENTITY: '等待身份验证',
-  AWAITING_SUBMIT_AUTHORIZATION: '等待提交授权', SUBMITTING: '正在生成订单', SUBMISSION_UNKNOWN: '提交结果待核对',
+  AWAITING_SUBMIT_AUTHORIZATION: '已直达下单界面（等待确认下单）', SUBMITTING: '正在生成订单', SUBMISSION_UNKNOWN: '提交结果待核对',
   ORDER_CREATED_UNPAID: '已生成未付款订单', PAYMENT_REQUIRED: '已停在付款步骤', CANCELLED: '已停止', BLOCKED: '需要处理'
 };
 function options(element, values, preferred) {

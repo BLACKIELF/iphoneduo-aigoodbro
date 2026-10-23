@@ -50,9 +50,10 @@ test("one explicit query uses an existing product tab and returns only exact sto
   assert.match(message.requestId, /^[0-9a-f-]{36}$/);
   const path = new globalThis.URL(message.requestPath, "https://www.apple.com.cn");
   assert.equal(path.pathname, "/shop/retail/pickup-message");
-  assert.deepEqual([...path.searchParams.keys()], ["pl", "mts.0", "parts.0", "location", "store"]);
+  assert.deepEqual([...path.searchParams.keys()], ["pl", "mts.0", "parts.0", "location"]);
   assert.equal(path.searchParams.get("parts.0"), "MEHY4CH/B");
-  assert.equal(path.searchParams.get("store"), "R617");
+  assert.equal(path.searchParams.has("store"), false);
+  assert.equal(message.targetStore, "R617");
   assert.deepEqual(options, { frameId: 0 });
   assert.equal(f.calls.get, 1);
   assert.deepEqual(f.state.inventoryPageResults[TASK.id], response.result);

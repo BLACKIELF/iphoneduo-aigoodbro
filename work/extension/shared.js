@@ -75,8 +75,8 @@ export function buildFulfillmentPath(tasks) {
     params.set("parts." + index, task.product.Code);
   });
 
-  // The bundled District fields contain postal codes except Hong Kong, where they
-  // are empty. Keep the upstream store selector and add only a valid postal code.
+  // Mainland postal searches return nearby stores; match the exact store/SKU
+  // in the response instead of sending the optional store selector as well.
   const postalPatterns = {
     cn: /^\d{6}$/,
     jp: /^\d{3}-\d{4}$/,
@@ -86,12 +86,13 @@ export function buildFulfillmentPath(tasks) {
     au: /^\d{4}$/
   };
   const postalCode = String(first.store.District || "").trim();
-  if (postalPatterns[first.areaCode]?.test(postalCode)) {
+  const validPostal = postalPatterns[first.areaCode]?.test(postalCode);
+  if (validPostal) {
     params.set("location", postalCode);
   }
   if (first.areaCode === "jp") {
     params.set("cppart", "UNLOCKED_JP");
-  } else {
+  } else if (first.areaCode !== "cn" || !validPostal) {
     params.set("store", first.store.StoreNumber);
   }
 
@@ -102,7 +103,9 @@ export function buildFulfillmentPath(tasks) {
 }
 
 function findAvailability(stores, storeNumber, productCode) {
-  const store = stores.find((candidate) => candidate && String(candidate.storeNumber) === String(storeNumber));
+  const matches = stores.filter((candidate) => candidate && candidate.storeNumber === storeNumber);
+  if (matches.length !== 1) return null;
+  const store = matches[0];
   const availability = store?.partsAvailability?.[productCode];
   if (!availability) {
     return null;

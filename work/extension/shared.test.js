@@ -31,7 +31,7 @@ test("builds locale-specific inventory paths", () => {
   const cnPath = buildFulfillmentPath([task]);
   assert.match(cnPath, /^\/shop\/retail\/pickup-message\?/);
   assert.match(cnPath, /parts\.0=MJT84CH%2FA/);
-  assert.match(cnPath, /store=R761/);
+  assert.equal(new URL(cnPath, appleBaseURL("cn")).searchParams.has("store"), false);
   assert.match(cnPath, /location=518001/);
   const hkPath = buildFulfillmentPath([{ ...task, areaCode: "hk" }]);
   assert.match(hkPath, /^\/hk\/shop\/retail\/pickup-message\?/);
@@ -58,12 +58,19 @@ test("uses bundled regional postal codes without guessing a location", async () 
     assert.equal(url.searchParams.get("location"), stores[0].District || null);
     if (areaCode === "jp") {
       assert.equal(url.searchParams.get("cppart"), "UNLOCKED_JP");
+    } else if (areaCode === "cn") {
+      assert.equal(url.searchParams.has("store"), false);
     } else {
       assert.equal(url.searchParams.get("store"), stores[0].StoreNumber);
     }
   }
   const badLocation = { ...task, store: { ...task.store, District: "深圳", City: "深圳" } };
   assert.equal(new URL(buildFulfillmentPath([badLocation]), appleBaseURL("cn")).searchParams.has("location"), false);
+  for (const District of ["", "深圳", "12345", "1234567", "１２３４５６"]) {
+    const params = new URL(buildFulfillmentPath([{ ...task, store: { ...task.store, District } }]), appleBaseURL("cn")).searchParams;
+    assert.equal(params.get("store"), task.store.StoreNumber);
+    assert.equal(params.has("location"), false);
+  }
 });
 
 test("parses an available store response", () => {
@@ -85,6 +92,14 @@ test("parses an available store response", () => {
 
 const UNKNOWN = { known: false, available: false, pickupDisplay: "" };
 const SKU = task.product.Code;
+test("postal responses never use a neighboring store or ambiguous duplicate target stores", () => {
+  const target = { storeNumber: "R761", partsAvailability: { [SKU]: { pickupDisplay: "unavailable" } } };
+  const neighbor = { storeNumber: "R999", partsAvailability: { [SKU]: { pickupDisplay: "available" } } };
+  assert.equal(parseStockResponse({ body: { stores: [neighbor, target] } }, "R761", SKU).available, false);
+  for (const duplicate of [target, { ...target, partsAvailability: neighbor.partsAvailability }]) {
+    assert.deepEqual(parseStockResponse({ body: { stores: [target, duplicate] } }, "R761", SKU), UNKNOWN);
+  }
+});
 function storePayload(pickupDisplay, storeNumber = task.store.StoreNumber, code = SKU) {
   return { body: { stores: [{ storeNumber, partsAvailability: { [code]: { pickupDisplay } } }] } };
 }

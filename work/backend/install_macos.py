@@ -99,7 +99,7 @@ def main():
         loaded = False
     if not loaded:
         bootstrap_service(domain, target, plist_path)
-    receipt = {'version': '1016v5', 'runtime': str(RUNTIME), 'extensionId': EXTENSION_ID,
+    receipt = {'version': '1018v1', 'runtime': str(RUNTIME), 'extensionId': EXTENSION_ID,
                'jarSha256': hashlib.sha256(jar.read_bytes()).hexdigest(), 'launchAgent': str(plist_path)}
     install_file(RUNTIME / 'installation.json', json.dumps(receipt, ensure_ascii=False, indent=2).encode(), 0o600)
     print(json.dumps(receipt, ensure_ascii=False, indent=2))

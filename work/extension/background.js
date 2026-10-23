@@ -3,6 +3,7 @@ import { normalizeNotificationSettings } from "./notifications.js";
 import { createNativeClient, redactText } from "./native-client.js";
 import { createCheckoutController } from "./checkout-controller.js";
 import { createInventoryPageClient } from "./inventory-page-client.js";
+import { compareVersions } from "./update-checker.js";
 
 const DASHBOARD_URL = chrome.runtime.getURL("app.html");
 const nativeRequest = createNativeClient(chrome.runtime);
@@ -16,6 +17,21 @@ let stockAlarmQueue = Promise.resolve();
 const STOCK_ALARM = "checkout-stock-status";
 
 chrome.runtime.onInstalled.addListener((details) => {
+  if (["install", "update"].includes(details.reason)) {
+    storageReady.then(async () => {
+      const version = chrome.runtime.getManifest().version;
+      if (details.reason === "update" && details.previousVersion === version) return;
+      await chrome.storage.local.set({ updateInstallEvent: {
+        reason: details.reason, version, previousVersion: details.previousVersion || ""
+      } });
+      if (details.reason === "update" && compareVersions(version, details.previousVersion) > 0) {
+        await chrome.action.setBadgeBackgroundColor({ color: "#2164d9" });
+        await chrome.action.setBadgeText({ text: "新" });
+      } else if (details.reason === "update") {
+        await chrome.action.setBadgeText({ text: "" });
+      }
+    }).catch(() => {});
+  }
   if (details.reason === "install") openDashboard().catch(() => {});
 });
 chrome.action.onClicked.addListener(() => openDashboard().catch(() => {}));

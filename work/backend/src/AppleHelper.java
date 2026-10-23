@@ -15,7 +15,7 @@ import java.util.concurrent.*;
 
 /** Local authenticated inventory daemon. Notification protocol follows Apple-Monitor. */
 public final class AppleHelper implements AutoCloseable {
-    static final String VERSION = "1016v5";
+    static final String VERSION = "1018v1";
     static final int PORT = 17371, MAX_BODY = 1_048_576;
     static final Set<String> AREAS = Set.of("cn", "hk", "jp", "sg", "us", "uk", "au");
     static final Set<Integer> INTERVALS = Set.of(30, 60, 120, 300);
@@ -203,18 +203,19 @@ public final class AppleHelper implements AutoCloseable {
         }
         try {
             boolean allSuccessful = true;
-            Reply deferredReply = null;
+            boolean coolingDown = false;
             Map<String,List<Map<String,Object>>> groups = new LinkedHashMap<>();
             for (Map<String,Object> task : active) {
                 String group = task.get("areaCode") + ":" + object(task.get("store"), "门店").get("StoreNumber");
                 groups.computeIfAbsent(group, key -> new ArrayList<>()).add(task);
             }
             for (List<Map<String,Object>> group : groups.values()) {
+                if (coolingDown) break;
                 Reply reply = null; Object payload = null; String error = null;
                 try {
-                    // A temporary endpoint failure cools down the whole batch, including later stores.
-                    reply = deferredReply == null ? request(expected, fulfillmentURI(group), "GET", "") : deferredReply;
-                    if (deferredReply == null && (reply.status() == 503 || reply.status() == 429)) {
+                    // Only requested stores get observations; later stores retain their prior state during cooldown.
+                    reply = request(expected, fulfillmentURI(group), "GET", "");
+                    if (reply.status() == 503 || reply.status() == 429) {
                         synchronized (lock) {
                             if (!active(expected)) return;
                             consecutiveFailures = Math.min(4, consecutiveFailures + 1);
@@ -222,7 +223,7 @@ public final class AppleHelper implements AutoCloseable {
                             retryAt = Math.max(saturatedAdd(now, retryDelayMillis(consecutiveFailures,
                                 ((Number) settings.get("intervalSeconds")).intValue())), retryAfterAt(reply.retryAfter(), now));
                         }
-                        deferredReply = reply;
+                        coolingDown = true;
                     }
                     if (reply.status() != 403 && reply.status() != 541) {
                         if (reply.status() != 200) error = "Apple 库存接口返回 HTTP " + reply.status();
@@ -237,7 +238,7 @@ public final class AppleHelper implements AutoCloseable {
                         Map<String,Object> previous = optionalObject(items.get(task.get("id")));
                         Stock stock = payload == null ? new Stock(false, false, "") : parseStock(payload, store(task), sku(task));
                         String status, detail;
-                        if (error != null) { status = "查询异常"; detail = error + (deferredReply == null ? "" : "；库存未知，等待重试"); }
+                        if (error != null) { status = "查询异常"; detail = error + (coolingDown ? "；库存未知，等待重试" : ""); }
                         else if (reply != null && (reply.status() == 403 || reply.status() == 541)) {
                             status = "需官网验证"; detail = "请打开 Apple 官网手动完成验证；若后台仍被限制，请暂停并使用官网查询";
                         } else if (!stock.known()) {
@@ -503,9 +504,10 @@ public final class AppleHelper implements AutoCloseable {
         String postal = (String) object(first.get("store"), "门店").get("District");
         Map<String,String> patterns = Map.of("cn", "[0-9]{6}", "jp", "[0-9]{3}-[0-9]{4}", "sg", "[0-9]{6}",
             "us", "[0-9]{5}(?:-[0-9]{4})?", "uk", "(?i)[A-Z]{1,2}[0-9][A-Z0-9]? [0-9][A-Z]{2}", "au", "[0-9]{4}");
-        if (patterns.containsKey(area) && postal.matches(patterns.get(area))) query.append("&location=").append(encode(postal));
+        boolean validPostal = patterns.containsKey(area) && postal.matches(patterns.get(area));
+        if (validPostal) query.append("&location=").append(encode(postal));
         if (area.equals("jp")) query.append("&cppart=UNLOCKED_JP");
-        else query.append("&store=").append(encode(store(first)));
+        else if (!area.equals("cn") || !validPostal) query.append("&store=").append(encode(store(first)));
         return URI.create(appleBase(area) + "/shop/retail/pickup-message?" + query);
     }
     static String appleBase(String area) {
@@ -529,10 +531,15 @@ public final class AppleHelper implements AutoCloseable {
         Map<String,Object> body = optionalObject(optionalObject(payload).get("body"));
         Object candidates = body.get("stores");
         if (!(candidates instanceof List<?>)) candidates = optionalObject(optionalObject(body.get("content")).get("pickupMessage")).get("stores");
+        Map<String,Object> target = null;
         if (candidates instanceof List<?> stores) for (Object value : stores) {
             Map<String,Object> store = optionalObject(value);
             if (!storeNumber.equals(store.get("storeNumber"))) continue;
-            Map<String,Object> part = optionalObject(optionalObject(store.get("partsAvailability")).get(productCode));
+            if (target != null) return new Stock(false, false, "");
+            target = store;
+        }
+        if (target != null) {
+            Map<String,Object> part = optionalObject(optionalObject(target.get("partsAvailability")).get(productCode));
             Object display = part.get("pickupDisplay");
             if (!(display instanceof String)) display = optionalObject(optionalObject(part.get("messageTypes")).get("regular")).get("pickupDisplay");
             String text = display instanceof String string ? string : "";

@@ -121,7 +121,8 @@ export function createInventoryPageClient(chrome, { now = Date.now } = {}) {
       let response;
       try {
         response = await chrome.tabs.sendMessage(tab.id, {
-          type: "inventory:query", requestId: run.requestId, requestPath: buildFulfillmentPath([run.task])
+          type: "inventory:query", requestId: run.requestId, requestPath: buildFulfillmentPath([run.task]),
+          targetStore: run.task.store.StoreNumber
         }, { frameId: 0 });
       } catch {
         ensureActive(run);
