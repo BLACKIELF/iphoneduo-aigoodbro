@@ -13,8 +13,8 @@
       const url = new URL(window.location.href);
       const path = decodeURIComponent(url.pathname);
       const isCn = url.origin === 'https://www.apple.com.cn' && /^\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
-      const isJp = url.origin === 'https://www.apple.com' && /^\/jp\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
-      return window.top === window && (isCn || isJp) && !url.username && !url.password &&
+      const isRegional = url.origin === 'https://www.apple.com' && /^\/(?:hk|hk-zh|jp)\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
+      return window.top === window && (isCn || isRegional) && !url.username && !url.password &&
         !/\/(?:bag|checkout|signin|account|orders?|secure)(?:\/|$)/i.test(path);
     } catch { return false; }
   }
@@ -22,14 +22,14 @@
     if (typeof path !== 'string' || path.length > 16_384 || typeof targetStore !== 'string' || !/^R[0-9]{1,8}$/.test(targetStore)) throw new Error('invalid-query');
     const url = new URL(path, window.location.origin);
     const validCn = url.origin === 'https://www.apple.com.cn' && url.pathname === '/shop/retail/pickup-message';
-    const validJp = url.origin === 'https://www.apple.com' && url.pathname === '/jp/shop/retail/pickup-message';
-    if ((!validCn && !validJp) || url.username || url.password || url.hash) throw new Error('invalid-query');
+    const validGlobal = url.origin === 'https://www.apple.com' && /^\/(?:hk|hk-zh|jp)\/shop\/retail\/pickup-message$/.test(url.pathname);
+    if ((!validCn && !validGlobal) || url.username || url.password || url.hash) throw new Error('invalid-query');
     const values = new Map(), parts = new Map(), modes = new Map();
     for (const [key, value] of url.searchParams) {
       if (values.has(key)) throw new Error('invalid-query');
       values.set(key, value);
       if (key === 'pl' && value === 'true' || key === 'store' && /^R[0-9]{1,8}$/.test(value) ||
-          key === 'location' && (/^[0-9]{6}$/.test(value) || /^[0-9]{3}-?[0-9]{4}$/.test(value)) ||
+          key === 'location' && (/^[0-9]{5,6}$/.test(value) || /^[0-9]{5}(?:-[0-9]{4})?$/.test(value) || /^[0-9]{3}-?[0-9]{4}$/.test(value)) ||
           key === 'cppart' && /^[A-Za-z0-9_]+$/.test(value)) continue;
       const part = /^(parts|mts)\.(0|[1-9][0-9]?)$/.exec(key);
       if (!part || (part[1] === 'mts' ? value !== 'regular' : !/^[A-Za-z0-9][A-Za-z0-9-]{1,49}(?:\/[A-Za-z0-9]{1,8})?$/.test(value))) throw new Error('invalid-query');

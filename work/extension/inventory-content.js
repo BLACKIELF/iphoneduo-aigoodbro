@@ -10,8 +10,8 @@
       const url = new URL(window.location.href);
       const path = decodeURIComponent(url.pathname);
       const isCn = url.origin === 'https://www.apple.com.cn' && /^\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
-      const isJp = url.origin === 'https://www.apple.com' && /^\/jp\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
-      return window.top === window && (isCn || isJp) && !url.username && !url.password &&
+      const isRegional = url.origin === 'https://www.apple.com' && /^\/(?:hk|hk-zh|jp)\/shop\/(?:buy-iphone|buy-watch|product)\/[^?#]+$/.test(path);
+      return window.top === window && (isCn || isRegional) && !url.username && !url.password &&
         !/\/(?:bag|checkout|signin|account|orders?|secure)(?:\/|$)/i.test(path);
     } catch { return false; }
   }

@@ -8,14 +8,16 @@ export function isCheckoutURL(raw) {
   try {
     const url = new URL(raw);
     const isCn = ['www.apple.com.cn', 'secure6.www.apple.com.cn'].includes(url.hostname);
-    const isJp = ['www.apple.com', 'secure6.www.apple.com'].includes(url.hostname) && /^\/jp(?:\/|$)/.test(url.pathname);
-    const path = url.pathname.replace(/^\/jp/, '');
-    return url.protocol === 'https:' && (isCn || isJp) && path.startsWith('/shop/');
+    const isGlobal = ['www.apple.com', 'secure6.www.apple.com'].includes(url.hostname);
+    const isShopPath = /^\/(?:(?:hk|hk-zh|jp)\/)?shop(?:\/|$)/.test(url.pathname);
+    return url.protocol === 'https:' && (isCn ? /^\/shop(?:\/|$)/.test(url.pathname) : (isGlobal && isShopPath));
   } catch { return false; }
 }
 
 function bagURL(areaCode) {
-  return areaCode === 'jp' ? 'https://www.apple.com/jp/shop/bag' : 'https://www.apple.com.cn/shop/bag';
+  if (areaCode === 'us') return 'https://www.apple.com/shop/bag';
+  if (['hk', 'jp'].includes(areaCode)) return `https://www.apple.com/${areaCode}/shop/bag`;
+  return 'https://www.apple.com.cn/shop/bag';
 }
 
 export function createCheckoutController(api) {

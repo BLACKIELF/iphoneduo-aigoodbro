@@ -30,8 +30,8 @@ export function validateCheckoutIntent(raw) {
   if (!/^[A-Z0-9]{4,24}\/[A-Z0-9]{1,4}$/u.test(product.Code)) throw new TypeError("商品编号无效");
   if (!["Model", "Capacity", "Color", "Type"].every(key => product[key] && product[key].length <= 160)) throw new TypeError("型号、容量、颜色和商品类型必须完整");
   if (SUPPORTED_IPHONE_MODELS.get(product.Type) !== normalized(product.Model)) throw new TypeError("自动购买仅支持已适配的 iPhone 型号，Apple Watch 暂不支持");
-  const areaCode = raw.areaCode === "jp" ? "jp" : "cn";
-  if (!["cn", "jp"].includes(raw.areaCode || "cn") || !["delivery", "pickup"].includes(raw.fulfillment)) throw new TypeError("当前仅支持中国官网或日本官网邮寄或门店自提");
+  const areaCode = ["cn", "jp", "hk", "us"].includes(raw.areaCode) ? raw.areaCode : "cn";
+  if (!["cn", "jp", "hk", "us"].includes(raw.areaCode || "cn") || !["delivery", "pickup"].includes(raw.fulfillment)) throw new TypeError("当前仅支持中国大陆、香港、日本或美国官网邮寄或门店自提");
   if (raw.quantity !== 1) throw new TypeError("每次只允许一件商品");
   if (typeof raw.maxTotal !== "number" || !Number.isFinite(raw.maxTotal) || raw.maxTotal <= 0) throw new TypeError("最高总价无效");
   for (const key of ["allowSubmit", "acknowledgedTerms"]) {
@@ -93,7 +93,8 @@ function reviewProblem(observation, intent) {
   if (observation.quantity !== 1) return "缺少或不正确的订单数量";
   if (typeof observation.total !== "number" || !Number.isFinite(observation.total) || observation.total <= 0) return "缺少有效订单总价";
   if (observation.total > intent.maxTotal) return "订单总价超过授权上限";
-  const expectedCurrency = intent.areaCode === "jp" ? "JPY" : "CNY";
+  const currencyMap = { cn: "CNY", jp: "JPY", hk: "HKD", us: "USD" };
+  const expectedCurrency = currencyMap[intent.areaCode] || "CNY";
   if (observation.currency !== expectedCurrency) return `订单币种必须为 ${expectedCurrency}`;
   if (observation.fulfillment !== intent.fulfillment) return "订单履约方式与目标不一致";
   if (intent.fulfillment === "pickup") {
@@ -104,9 +105,11 @@ function reviewProblem(observation, intent) {
       if (!text(observation.pickupStoreName) || storeName(observation.pickupStoreName) !== storeName(intent.pickup.storeName)) return "缺少匹配的订单自提门店证据";
     }
   }
-  const expectedPayment = intent.areaCode === "jp" ? ["credit-card", "convenience-store", "alipay"] : ["alipay"];
+  const expectedPayment = ["jp", "hk", "us"].includes(intent.areaCode)
+    ? ["credit-card", "apple-pay", "convenience-store", "alipay", "wechat"]
+    : ["alipay"];
   if (!expectedPayment.includes(observation.paymentMethod)) {
-    return intent.areaCode === "jp" ? "订单付款方式不匹配" : "订单付款方式必须为支付宝";
+    return intent.areaCode === "cn" ? "订单付款方式必须为支付宝" : "订单付款方式不匹配";
   }
   return "";
 }

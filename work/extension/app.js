@@ -302,13 +302,16 @@ async function directToOrder(task) {
   if (operationPending) return;
   setFormMessage(`正在为「${task.product.Model} · ${task.product.Color}」启动直达下单…`, false);
   try {
-    const isJp = task.areaCode === "jp";
+    const budgets = { cn: 30000, hk: 35000, jp: 500000, us: 4000 };
+    const maxTotal = budgets[task.areaCode] || 30000;
     const store = task.store;
-    const address = store?.City || store?.Province || (isJp ? "Tokyo" : "浦东新区");
+    const address = store?.District || store?.City || store?.Province || "Store Area";
+    const state = store?.Province || store?.City || "Region";
+    const city = store?.City || store?.Province || "City";
     const pickup = {
       storeNumber: store.StoreNumber,
       storeName: store.CityStoreName ? store.CityStoreName.split('-').slice(1).join('-').trim() || store.CityStoreName : (store.StoreName || ''),
-      region: { state: store.Province || store.City || (isJp ? 'Tokyo' : '上海市'), city: store.City || store.Province || (isJp ? 'Tokyo' : '上海市'), address },
+      region: { state, city, address },
       slotPolicy: 'earliest'
     };
     const intent = {
@@ -316,7 +319,7 @@ async function directToOrder(task) {
       areaCode: task.areaCode || 'cn',
       fulfillment: 'pickup',
       quantity: 1,
-      maxTotal: isJp ? 500000 : 30000,
+      maxTotal,
       entryMode: 'product',
       runMode: 'review',
       allowSubmit: false,
@@ -405,7 +408,7 @@ function renderTasks() {
     removeButton.disabled = !backendConnected || operationPending;
     removeButton.addEventListener("click", () => removeTask(task.id));
     actions.append(openButton, removeButton);
-    if (["cn", "jp"].includes(task.areaCode)) {
+    if (["cn", "jp", "hk", "us"].includes(task.areaCode)) {
       const directOrderBtn = document.createElement("button");
       directOrderBtn.type = "button";
       directOrderBtn.textContent = "直达下单";

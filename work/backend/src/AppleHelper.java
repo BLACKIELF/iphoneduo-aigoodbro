@@ -398,8 +398,13 @@ public final class AppleHelper implements AutoCloseable {
                 "consecutiveFailures", consecutiveFailures, "items", items, "log", log)))), "状态");
     }
     void persist() throws IOException {
-        Path temporary = Files.createTempFile(stateFile.getParent(), ".state-", ".json",
-            PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        Path temporary;
+        try {
+            temporary = Files.createTempFile(stateFile.getParent(), ".state-", ".json",
+                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        } catch (UnsupportedOperationException ignored) {
+            temporary = Files.createTempFile(stateFile.getParent(), ".state-", ".json");
+        }
         try {
             Files.writeString(temporary, Json.stringify(snapshot()), StandardCharsets.UTF_8);
             Files.move(temporary, stateFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

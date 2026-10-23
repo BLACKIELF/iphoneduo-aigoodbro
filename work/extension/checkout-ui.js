@@ -102,7 +102,13 @@ async function loadCatalog(areaCode = 'cn') {
   options($('model'), products.map(p => p.Model), defaultModel);
   capacities();
   if ($('budget')) {
-    $('budget').placeholder = areaCode === 'jp' ? '请填写本次订单最高金额（JPY，如 200000）' : '请填写本次订单最高金额（元，如 10000）';
+    const placeholders = {
+      cn: '请填写本次订单最高金额（CNY，如 10000）',
+      hk: '请填写本次订单最高金额（HKD，如 11000）',
+      jp: '请填写本次订单最高金额（JPY，如 200000）',
+      us: '请填写本次订单最高金额（USD，如 1300）'
+    };
+    $('budget').placeholder = placeholders[areaCode] || '请填写本次订单最高金额';
   }
 }
 async function initialize() {

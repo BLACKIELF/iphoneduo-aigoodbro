@@ -13,7 +13,10 @@ import urllib.request
 HOST_ORIGIN = 'chrome-extension://agooghaedakdaimodmlajgkgondpjjil/'
 SERVICE_URL = 'http://127.0.0.1:17371/command'
 MAX_MESSAGE = 1024 * 1024
-TOKEN_PATH = Path.home() / 'Library/Application Support/ApplePurchaseHelper/token'
+if sys.platform == 'win32':
+    TOKEN_PATH = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData/Local')) / 'ApplePurchaseHelper/token'
+else:
+    TOKEN_PATH = Path.home() / 'Library/Application Support/ApplePurchaseHelper/token'
 ACTIONS = {'status', 'sync', 'start', 'stop', 'check'}
 
 
@@ -55,7 +58,7 @@ def write_message(stream, message):
 def forward(message):
     try:
         token = TOKEN_PATH.read_text().strip()
-        if not token or TOKEN_PATH.stat().st_mode & 0o077:
+        if not token or (sys.platform != 'win32' and TOKEN_PATH.stat().st_mode & 0o077):
             return {'ok': False, 'error': '后台连接凭据缺失或权限异常，请重新安装后台'}
         request = urllib.request.Request(SERVICE_URL,
             data=json.dumps(message, ensure_ascii=False).encode('utf-8'),
@@ -85,6 +88,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def main():
+    if sys.platform == 'win32':
+        import msvcrt
+        msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+        msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     # Chrome supplies its extension origin as argv[1]; reject invocation by another extension.
     if len(sys.argv) < 2 or sys.argv[1] != HOST_ORIGIN:
         return 1
