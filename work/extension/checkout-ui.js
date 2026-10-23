@@ -117,7 +117,29 @@ async function initialize() {
     $('area').addEventListener('change', () => loadCatalog($('area').value).catch(error => { $('message').textContent = error.message; }));
   }
   $('model').addEventListener('change', capacities); $('capacity').addEventListener('change', colors);
-  $('store').addEventListener('change', () => { $('address').value = ''; });
+  const districtMap = {
+    R320: '朝阳区', R388: '西城区', R448: '东城区', R479: '朝阳区', R645: '朝阳区', R792: '大兴区',
+    R359: '黄浦区', R389: '浦东新区', R390: '黄浦区', R401: '徐汇区', R581: '杨浦区', R678: '静安区', R683: '普陀区', R705: '闵行区',
+    R577: '天河区', R639: '天河区', R484: '南山区', R761: '罗湖区', R793: '宝安区',
+    R502: '成华区', R580: '锦江区', R579: '和平区', R637: '南开区', R638: '河西区',
+    R476: '江北区', R480: '渝中区', R573: '九龙坡区', R471: '上城区', R532: '上城区',
+    R493: '秦淮区', R643: '雨花台区', R703: '玄武区', R534: '沈河区', R576: '和平区', R609: '西岗区',
+    R575: '江汉区', R617: '芙蓉区', R572: '二七区', R670: '五华区', R571: '青秀区',
+    R574: '梁溪区', R688: '工业园区', R531: '海曙区', R766: '瓯海区', R765: '蜀山区',
+    R648: '历下区', R557: '市南区', R644: '思明区', R646: '晋安区'
+  };
+  function autoFillAddress() {
+    const s = stores.find(item => item.StoreNumber === $('store').value);
+    if (s && !$('address').value.trim()) {
+      const known = districtMap[s.StoreNumber] || '';
+      $('address').value = [known, s.CityStoreName, s.District].filter(Boolean).join(' ');
+    }
+  }
+  $('store').addEventListener('change', () => {
+    $('address').value = '';
+    autoFillAddress();
+  });
+  autoFillAddress();
   $('fulfillment').addEventListener('change', fulfillmentFields); $('entry').addEventListener('change', fulfillmentFields);
   $('start').addEventListener('click', () => startPurchase());
   $('trial').addEventListener('click', () => startPurchase(true));
