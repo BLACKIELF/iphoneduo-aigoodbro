@@ -68,9 +68,37 @@
 请用 Codex 协助我安装或更新 https://github.com/BLACKIELF/iphoneduo-aigoodbro 的 iPhoneduo助手aigoodbro 至 1.6.0（1023v1）：先读 README，复用已有同源安装及原扩展目录，保留本地改动、任务、设置和库存监控状态，先停止旧购买任务，比较版本后更新必要文件，Java 后台无变化则不重装，协助重新加载扩展并核验版本、固定 ID 和后台连接，不自动恢复购买或付款；不能操作扩展管理页时给我手动重载步骤，缺少安装才按 README 安装并保持暂停。
 ```
 
-## 安装（macOS + Google Chrome）
+## 🪟 Windows 用户安装与运行指南 (零 Python 依赖 · 一键安装)
 
-需要 Git、可运行的 `/usr/bin/python3` 和 JDK 21。扩展至少需要 Chrome 120。当前安装器不支持 Windows、Linux 或其他浏览器。Node.js 仅用于开发测试。
+Windows 环境下已实现 **100% 纯原生支持**，无需安装 Python，仅需 Java 运行环境：
+
+### 第一步：准备 Java 环境（若已有 Java 17 或 21 可跳过）
+- 推荐下载安装免费的 **OpenJDK 21 (Temurin)**：
+  👉 [Adoptium 官方下载地址 (Windows x64 .msi 安装包)](https://adoptium.net/zh-CN/temurin/releases/?version=21)
+- 安装时勾选“Set JAVA_HOME variable”和“Add to PATH”以便命令行识别。
+
+### 第二步：一键配置后台与 Chrome 通信
+1. 解压下载的发布压缩包到任意英文或常规路径（例如 `D:\iphoneduo-helper`）。
+2. **鼠标双击运行 `install_windows.bat`**：
+   - 脚本会自动检测 Java 环境；
+   - 自动在 `%LOCALAPPDATA%\ApplePurchaseHelper` 部署后台并生成安全配对密钥；
+   - 自动生成 Chrome Native Messaging 原生连接器并写入注册表（无需管理员权限）。
+
+### 第三步：启动后台服务
+- 双击运行目录下的 **`start_backend.bat`**（保持黑框常驻即可后台轮询）；
+- 或双击 **`start_backend_silent.vbs`** 实现无黑框静默在后台常驻运行。
+
+### 第四步：在 Chrome 加载扩展
+1. 打开 Chrome 浏览器，在地址栏输入访问：`chrome://extensions/`
+2. 开启右上角「**开发者模式**」开关；
+3. 点击左上角「**加载已解压的扩展程序**」，选择本目录下的 `extension` 文件夹；
+4. 点击扩展卡片上的主界面，打开后左侧显示绿色 **「已连接本机 Java 后台」** 即配置成功！
+
+---
+
+## 🍏 安装（macOS + Google Chrome）
+
+需要 Git、可运行的 `/usr/bin/python3` 和 JDK 21。扩展至少需要 Chrome 120。Node.js 仅用于开发测试。
 
 先检查是否已有同源安装；已有用户应保留当前扩展目录，更新原目录后重新加载，避免生成第二份配置。安装器会复用本机服务并保留任务、设置与启用状态；**更新正在监控的安装不会自动暂停它**。同名但指向其他位置的服务会拒绝覆盖。
 
