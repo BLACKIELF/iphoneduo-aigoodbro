@@ -4,9 +4,21 @@
 
 官网：[aigoodbro.com](https://aigoodbro.com) · **1023v1 / 1.6.0 预发布测试版** · GPL-3.0。本次扩展已升级支持一键直达下单界面。
 
+<div align="center">
+  <img src="docs/brand/aigoodbro-avatar.png" alt="AiGoodBro 官方卡通吉祥物头像" width="108" style="border-radius:50%; box-shadow:0 6px 20px rgba(0,0,0,0.15); border:3px solid #fff;">
+  <p><strong>AiGoodBro 官方吉祥物 · 品牌与设计规范已上线</strong></p>
+  <p><a href="docs/DESIGN-GUIDELINES.md">📖 查看完整品牌设计规范 (Design Guidelines)</a> · <a href="docs/brand/">🎨 官方形象与头像资产</a></p>
+</div>
+
 展示素材：**1016v7**（2026-10-16），图片展示此前版本界面；1023v1 新增购买选项见下方说明。
 
 <img src="docs/images/cover-1016v7.png" alt="iPhoneduo助手aigoodbro 介绍封面；界面预览，非实站运行截图" width="480">
+
+## 🎨 品牌形象与设计规范
+
+本项目全线统一采用 **AiGoodBro** 官方卡通吉祥物（无眼镜版官方设定：深发微翘、Bro 蓝夹克、红拉链袖口细节、直筒长裤与纯白球鞋），已正式停用旧版双开门软件图标：
+- **官方形象资产**：收录于 [`docs/brand/`](docs/brand/)，包含 1254×1254 微笑头像、思考头像、惊喜头像及完整三视图；
+- **设计规范文件**：详细说明见 [`docs/DESIGN-GUIDELINES.md`](docs/DESIGN-GUIDELINES.md)，覆盖角色视觉识别点、排版字体规范（PingFang SC）、状态色彩、Web Audio 纯净和弦持续响铃音频规范与自动跳转安全体验。
 
 ## 当前可用范围
 
